@@ -90,14 +90,6 @@ export default async function HomePage() {
           </picture>
         </div>
 
-        {/* Framing Corners (Electric Cyan 2px L-brackets) */}
-        <div className="pointer-events-none absolute inset-3 sm:inset-6 z-10">
-          <span className="vf-corner vf-corner-tl opacity-80" />
-          <span className="vf-corner vf-corner-tr opacity-80" />
-          <span className="vf-corner vf-corner-bl opacity-80" />
-          <span className="vf-corner vf-corner-br opacity-80" />
-        </div>
-
         {/* Content Container */}
         <div className="relative z-10 mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
           <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
@@ -135,38 +127,19 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* Right: Full-Fidelity Photographic Viewfinder Showcase (100% of photo visible, uncropped) */}
+            {/* Right: Pure, Unframed Hero Photograph (100% visible, clean editorial display) */}
             <div className="lg:col-span-5">
-              <div className="relative overflow-hidden rounded-[2px] border border-[var(--hairline)] bg-[var(--ink-2)] p-2.5 sm:p-3 shadow-2xl transition-all hover:border-[var(--cyan)]/60">
-                {/* Viewfinder Top HUD */}
-                <div className="mb-2.5 flex items-center justify-between border-b border-[var(--hairline)] px-1 pb-2">
-                  <span className="font-mono text-[10px] font-bold tracking-wider text-[var(--cyan)] uppercase">
-                    LIVE FRAME
-                  </span>
-                  <span className="font-mono text-[10px] font-semibold text-[var(--grey)] uppercase tracking-wider">
-                    HEPHZIBAH CREW · ON SET
-                  </span>
-                </div>
-
-                {/* The Complete Uncropped Photo in Native Ratio */}
-                <div className="relative aspect-[1024/981] w-full overflow-hidden rounded-[1px] bg-[var(--black)]">
-                  <picture>
-                    <source srcSet="/media/hephzibah-hero-crew.webp" type="image/webp" />
-                    <img
-                      src="/media/hephzibah-hero-crew.jpg"
-                      alt="Hephzibah Media production crew with camera and lighting rig on assignment at Ghana Robotics Competition"
-                      className="h-full w-full object-cover"
-                      loading="eager"
-                      fetchPriority="high"
-                    />
-                  </picture>
-                </div>
-
-                {/* Viewfinder Bottom Caption */}
-                <div className="mt-2.5 flex items-center justify-between px-1 pt-1 font-mono text-[10px] text-[var(--grey)]">
-                  <span>GHANA ROBOTICS CHAMPIONSHIP</span>
-                  <span className="text-[var(--cyan)] font-bold">ACCRA · GHANA</span>
-                </div>
+              <div className="relative aspect-[1024/981] w-full overflow-hidden rounded-xl sm:rounded-2xl shadow-2xl shadow-black/80 ring-1 ring-white/10 transition-transform duration-500 hover:scale-[1.01]">
+                <picture>
+                  <source srcSet="/media/hephzibah-hero-crew.webp" type="image/webp" />
+                  <img
+                    src="/media/hephzibah-hero-crew.jpg"
+                    alt="Hephzibah Media production crew with camera and lighting rig on assignment at Ghana Robotics Competition"
+                    className="h-full w-full object-cover"
+                    loading="eager"
+                    fetchPriority="high"
+                  />
+                </picture>
               </div>
             </div>
           </div>
