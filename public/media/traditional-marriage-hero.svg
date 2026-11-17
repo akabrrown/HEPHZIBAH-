@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1067" width="1600" height="1067">
+  <defs>
+    <style>
+      .bg { fill: #0F1012; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner-circle { fill: #1E2025; stroke: #9AA0A6; }
+      .gridline { stroke: #2A2C31; }
+      .accent { stroke: #00E5FF; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 38px; font-weight: 700; letter-spacing: 2px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 22px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner-circle { fill: #F6F8FA; stroke: #D0D7DE; }
+        .gridline { stroke: #E2E8F0; }
+        .accent { stroke: #007C8A; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1600" height="1067" class="bg"/>
+  <rect x="64" y="64" width="1472" height="939" class="card" stroke-width="2"/>
+  <circle cx="800" cy="480" r="240" fill="none" class="accent" stroke-width="2"/>
+  <circle cx="800" cy="480" r="170" fill="none" class="gridline" stroke-width="2"/>
+  <circle cx="800" cy="480" r="95" class="inner-circle" stroke-width="1.5"/>
+  <rect x="140" y="140" width="220" height="48" fill="none" class="gridline" stroke-width="2"/>
+  <text x="160" y="172" class="meta">35MM F/1.4</text>
+  <text x="800" y="840" text-anchor="middle" class="title">TRADITIONAL MARRIAGE — ABURI</text>
+  <text x="800" y="892" text-anchor="middle" class="meta">COURTYARD CEREMONY · NATURAL LIGHT · 1600x1067</text>
+</svg>

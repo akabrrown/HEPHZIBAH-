@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1000" width="1500" height="1000">
+  <defs>
+    <style>
+      .bg { fill: #0A0A0B; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner { fill: #1B1C1F; stroke: #8A9096; }
+      .accent { stroke: #00E5FF; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 34px; font-weight: 700; letter-spacing: 2px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner { fill: #F6F8FA; stroke: #D0D7DE; }
+        .accent { stroke: #007C8A; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1500" height="1000" class="bg"/>
+  <rect x="80" y="80" width="1340" height="840" class="card" stroke-width="2"/>
+  <rect x="480" y="200" width="540" height="460" class="inner" stroke-width="1.5"/>
+  <circle cx="750" cy="430" r="120" fill="none" class="accent" stroke-width="1.5"/>
+  <text x="750" y="765" text-anchor="middle" class="title">MEMORIAL THANKSGIVING — KUMASI</text>
+  <text x="750" y="815" text-anchor="middle" class="meta">ARCHIVAL DOCUMENTARY COVERAGE · 1500x1000</text>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1067" width="1600" height="1067">
+  <defs>
+    <style>
+      .bg { fill: #0D0E10; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner { fill: #1B1D21; stroke: #8A9096; }
+      .gridline { stroke: #2A2C31; }
+      .accent { stroke: #00E5FF; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 36px; font-weight: 700; letter-spacing: 2px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner { fill: #F6F8FA; stroke: #D0D7DE; }
+        .gridline { stroke: #E2E8F0; }
+        .accent { stroke: #007C8A; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1600" height="1067" class="bg"/>
+  <rect x="70" y="70" width="1460" height="927" class="card" stroke-width="2"/>
+  <rect x="220" y="220" width="1160" height="500" class="inner" stroke-width="1.5"/>
+  <line x1="220" y1="470" x2="1380" y2="470" class="gridline" stroke-width="2"/>
+  <circle cx="800" cy="470" r="110" fill="none" class="accent" stroke-width="2"/>
+  <text x="800" y="830" text-anchor="middle" class="title">WEST COAST PAYMENTS SUMMIT</text>
+  <text x="800" y="882" text-anchor="middle" class="meta">CORPORATE KEYNOTE · KEMPINSKI ACCRA · 1600x1067</text>
+</svg>

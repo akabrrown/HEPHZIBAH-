@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1000" width="1500" height="1000">
+  <defs>
+    <style>
+      .bg { fill: #0F1012; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner { fill: #1B1C20; stroke: #8A9096; }
+      .arch { stroke: #00E5FF; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 36px; font-weight: 700; letter-spacing: 2px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner { fill: #F6F8FA; stroke: #ADB5BD; }
+        .arch { stroke: #007C8A; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1500" height="1000" class="bg"/>
+  <rect x="60" y="60" width="1380" height="880" class="card" stroke-width="2"/>
+  <polygon points="750,180 1120,700 380,700" fill="none" class="arch" stroke-width="2"/>
+  <rect x="640" y="420" width="220" height="280" class="inner" stroke-width="1.5"/>
+  <text x="750" y="790" text-anchor="middle" class="title">CATHEDRAL WEDDING — ACCRA</text>
+  <text x="750" y="840" text-anchor="middle" class="meta">AISLE EXIT · FULL DAY COVERAGE · 1500x1000</text>
+</svg>

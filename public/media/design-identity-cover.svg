@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" width="1200" height="1200">
+  <defs>
+    <style>
+      .bg { fill: #0F1012; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner { fill: #111214; }
+      .circle-mark { stroke: #00E5FF; }
+      .rect-mark { stroke: #9AA0A6; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 44px; font-weight: 800; letter-spacing: 6px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 22px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner { fill: #F6F8FA; }
+        .circle-mark { stroke: #007C8A; }
+        .rect-mark { stroke: #4B5563; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1200" height="1200" class="bg"/>
+  <rect x="80" y="80" width="1040" height="1040" class="card" stroke-width="2"/>
+  <rect x="180" y="200" width="840" height="540" class="inner"/>
+  <circle cx="600" cy="470" r="145" fill="none" class="circle-mark" stroke-width="4"/>
+  <rect x="520" y="390" width="160" height="160" fill="none" class="rect-mark" stroke-width="2"/>
+  <text x="600" y="880" text-anchor="middle" class="title">GOLD COAST ROASTERS</text>
+  <text x="600" y="945" text-anchor="middle" class="meta">IDENTITY SYSTEM &amp; PACKAGING GRID · OSU ACCRA</text>
+</svg>

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js build output
+.next/
+out/
+
+# Local PGlite data
+.pglite/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Test reports
+playwright-report/
+test-results/
+coverage/
+
+# OS & logs
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo

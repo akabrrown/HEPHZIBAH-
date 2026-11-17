@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" width="1200" height="1500">
+  <defs>
+    <style>
+      .bg { fill: #121316; }
+      .card { fill: #16171A; stroke: #2A2C31; }
+      .inner { fill: #1C1D22; stroke: #8A9096; }
+      .gridline { stroke: #2A2C31; }
+      .accent { stroke: #00E5FF; }
+      .title { fill: #FFFFFF; font-family: system-ui, -apple-system, sans-serif; font-size: 34px; font-weight: 700; letter-spacing: 2px; }
+      .meta { fill: #9AA0A6; font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: 4px; }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #EEF2F6; }
+        .card { fill: #FFFFFF; stroke: #D0D7DE; }
+        .inner { fill: #F6F8FA; stroke: #D0D7DE; }
+        .gridline { stroke: #E2E8F0; }
+        .accent { stroke: #007C8A; }
+        .title { fill: #0A0A0B; }
+        .meta { fill: #4B5563; }
+      }
+    </style>
+  </defs>
+  <rect width="1200" height="1500" class="bg"/>
+  <rect x="80" y="80" width="1040" height="1340" class="card" stroke-width="2"/>
+  <rect x="260" y="260" width="680" height="820" class="inner" stroke-width="1.5"/>
+  <line x1="260" y1="670" x2="940" y2="670" class="gridline" stroke-width="2"/>
+  <line x1="600" y1="260" x2="600" y2="1080" class="gridline" stroke-width="2"/>
+  <circle cx="600" cy="670" r="140" fill="none" class="accent" stroke-width="2"/>
+  <text x="600" y="1230" text-anchor="middle" class="title">DETAIL STUDY — ABURI</text>
+  <text x="600" y="1282" text-anchor="middle" class="meta">PORTRAIT ORIENTATION · 1200x1500</text>
+</svg>
