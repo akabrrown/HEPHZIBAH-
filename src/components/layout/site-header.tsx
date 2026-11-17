@@ -251,14 +251,13 @@ export function SiteHeader({
             {/* Bottom Dock: Action CTA & Socials */}
             <div className="border-t-2 border-black/15 bg-black/10 p-5 pl-8 space-y-3.5">
               {pathname !== "/book" && (
-                <ButtonLink
+                <Link
                   href="/book"
-                  variant="primary"
-                  className="w-full justify-center py-3.5 font-north-arena text-base uppercase tracking-wider bg-black text-[#00E5FF] hover:bg-neutral-900 border-2 border-black shadow-xl"
                   onClick={() => setMenuOpen(false)}
+                  className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[2px] border-2 border-black bg-black px-6 py-3.5 font-north-arena text-base uppercase tracking-wider !text-[#00E5FF] shadow-xl hover:bg-neutral-900 hover:!text-white transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 >
                   Request a booking
-                </ButtonLink>
+                </Link>
               )}
 
               <div className="flex items-center justify-between pt-1">
