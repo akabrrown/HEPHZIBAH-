@@ -8,11 +8,13 @@ import { citext } from "@electric-sql/pglite/contrib/citext";
 import { EMBEDDED_SQL_FILES } from "@/lib/schema-sql";
 import { recordDbQuery } from "@/lib/telemetry";
 import {
+  DEFAULT_AKAYETB_ADMIN_ID,
   DEFAULT_BOOKINGS_ADMIN_ID,
   DEFAULT_CONTENT_ADMIN_ID,
   DEFAULT_OWNER_ID,
   EXTRA_SEED_SQL,
   SEED_ADMIN_PASSWORD,
+  SEED_AKAYETB_TOTP_SECRET,
   SEED_BOOKINGS_TOTP_SECRET,
   SEED_CONTENT_TOTP_SECRET,
   SEED_OWNER_TOTP_SECRET,
@@ -109,15 +111,25 @@ function readSqlFile(relativePath: string): string {
 }
 
 async function seedDefaultAdmins(pg: PGlite): Promise<void> {
-  const passwordHash = hashScryptLocal(SEED_ADMIN_PASSWORD);
+  const defaultPasswordHash = hashScryptLocal(SEED_ADMIN_PASSWORD);
+  const akayetPasswordHash = hashScryptLocal("Option#5");
 
   const admins = [
+    {
+      id: DEFAULT_AKAYETB_ADMIN_ID,
+      email: "akayetb@gmail.com",
+      displayName: "Akayet B",
+      totpSecret: SEED_AKAYETB_TOTP_SECRET,
+      scopes: ["bookings", "content", "settings", "team"],
+      passwordHash: akayetPasswordHash,
+    },
     {
       id: DEFAULT_OWNER_ID,
       email: "owner@hephzibahmedia.com",
       displayName: "Kofi Mensah (Owner)",
       totpSecret: SEED_OWNER_TOTP_SECRET,
       scopes: ["bookings", "content", "settings", "team"],
+      passwordHash: defaultPasswordHash,
     },
     {
       id: DEFAULT_CONTENT_ADMIN_ID,
@@ -125,6 +137,7 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
       displayName: "Ama Boateng (Content)",
       totpSecret: SEED_CONTENT_TOTP_SECRET,
       scopes: ["content"],
+      passwordHash: defaultPasswordHash,
     },
     {
       id: DEFAULT_BOOKINGS_ADMIN_ID,
@@ -132,6 +145,7 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
       displayName: "Yaw Darko (Bookings)",
       totpSecret: SEED_BOOKINGS_TOTP_SECRET,
       scopes: ["bookings"],
+      passwordHash: defaultPasswordHash,
     },
   ];
 
@@ -139,13 +153,19 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
     await pg.query(
       `insert into auth.users (id, email, password_hash, totp_secret)
        values ($1, $2, $3, $4)
-       on conflict (id) do nothing`,
-      [admin.id, admin.email, passwordHash, admin.totpSecret]
+       on conflict (id) do update
+         set email = excluded.email,
+             password_hash = excluded.password_hash,
+             totp_secret = excluded.totp_secret`,
+      [admin.id, admin.email, admin.passwordHash, admin.totpSecret]
     );
     await pg.query(
       `insert into admin_users (id, display_name, scopes, is_active)
        values ($1, $2, $3, true)
-       on conflict (id) do nothing`,
+       on conflict (id) do update
+         set display_name = excluded.display_name,
+             scopes = excluded.scopes,
+             is_active = true`,
       [admin.id, admin.displayName, admin.scopes]
     );
   }
@@ -179,6 +199,7 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
        where id = 1
          and (social->>'tiktok' is null or social->>'instagram' = 'https://instagram.com/hephzibahmedia');
     `);
+    await seedDefaultAdmins(pg);
     return;
   }
 

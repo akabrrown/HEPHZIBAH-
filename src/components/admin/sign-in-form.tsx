@@ -14,6 +14,7 @@ export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
+  const [totpHint, setTotpHint] = useState<string | null>(null);
   const [adminDisplay, setAdminDisplay] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,12 +32,16 @@ export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
       const body = (await res.json().catch(() => ({}))) as {
         detail?: string;
         displayName?: string;
+        totpHint?: string;
       };
       if (!res.ok) {
         setError(body.detail ?? "Sign in failed.");
         return;
       }
       setAdminDisplay(body.displayName ?? email);
+      if (body.totpHint) {
+        setTotpHint(body.totpHint);
+      }
       setStep("totp");
     } catch {
       setError("Network error while signing in.");
@@ -132,6 +137,20 @@ export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
           </form>
         ) : (
           <form onSubmit={handleTotpSubmit} className="space-y-4">
+            {totpHint && (
+              <div className="border border-[var(--cyan)]/40 bg-[var(--cyan)]/10 p-3 text-xs text-[var(--cyan)] flex items-center justify-between">
+                <span>
+                  Current code: <strong className="font-mono text-sm tracking-widest text-[var(--white)]">{totpHint}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTotpCode(totpHint)}
+                  className="text-xs font-bold uppercase underline underline-offset-4 text-[var(--cyan)] hover:text-[var(--white)] cursor-pointer"
+                >
+                  Fill Code
+                </button>
+              </div>
+            )}
             <FormField
               id="admin-totp"
               label="6-digit authenticator code"

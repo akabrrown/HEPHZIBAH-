@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
         nextStep: "verify_totp",
         displayName: sessionPayload.displayName,
         email: sessionPayload.email,
+        totpHint: sessionPayload.totpHint,
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );

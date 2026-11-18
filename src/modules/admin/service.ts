@@ -65,6 +65,7 @@ export async function authenticateAdminPassword(
     aal: "aal1",
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
     jti: crypto.randomUUID(),
+    totpHint: admin.totp_secret ? generateTotpCode(admin.totp_secret) : undefined,
   };
 }
 

@@ -19,6 +19,7 @@ export interface AdminSessionPayload {
   aal: AuthAal;
   exp: number;
   jti: string;
+  totpHint?: string;
 }
 
 export function hashPassword(password: string): string {
