@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { citext } from "@electric-sql/pglite/contrib/citext";
+import { EMBEDDED_SQL_FILES } from "@/lib/schema-sql";
 import { recordDbQuery } from "@/lib/telemetry";
 import {
   DEFAULT_BOOKINGS_ADMIN_ID,
@@ -89,8 +91,21 @@ function hashScryptLocal(password: string): string {
 }
 
 function readSqlFile(relativePath: string): string {
-  const fullPath = path.join(process.cwd(), relativePath);
-  return fs.readFileSync(fullPath, "utf8");
+  try {
+    const fullPath = path.join(process.cwd(), relativePath);
+    if (fs.existsSync(fullPath)) {
+      return fs.readFileSync(fullPath, "utf8");
+    }
+  } catch {
+    // Fall through to embedded SQL in serverless/sandboxed environments
+  }
+
+  const normalized = relativePath.replace(/\\/g, "/");
+  const embedded = EMBEDDED_SQL_FILES[normalized];
+  if (embedded) {
+    return embedded;
+  }
+  throw new Error(`SQL file not found on disk or embedded: ${relativePath}`);
 }
 
 async function seedDefaultAdmins(pg: PGlite): Promise<void> {
@@ -198,9 +213,30 @@ function resolvePgliteDataDir(): string {
   if (process.env.NODE_ENV === "test") {
     return "memory://";
   }
-  const dir = path.join(process.cwd(), ".pglite", "hephzibah");
-  fs.mkdirSync(path.dirname(dir), { recursive: true });
-  return dir;
+  // Vercel / AWS Lambda serverless read-only filesystem check
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = path.join(os.tmpdir(), "pglite-hephzibah");
+    try {
+      fs.mkdirSync(tmpDir, { recursive: true });
+      return tmpDir;
+    } catch {
+      return "memory://";
+    }
+  }
+  try {
+    const dir = path.join(process.cwd(), ".pglite", "hephzibah");
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    return dir;
+  } catch {
+    // If process.cwd() is read-only, safely fall back to OS temp dir
+    try {
+      const tmpDir = path.join(os.tmpdir(), "pglite-hephzibah");
+      fs.mkdirSync(tmpDir, { recursive: true });
+      return tmpDir;
+    } catch {
+      return "memory://";
+    }
+  }
 }
 
 export async function createFreshTestDb(): Promise<PGlite> {

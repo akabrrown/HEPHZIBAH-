@@ -118,11 +118,19 @@ describe("Performance & Resilience (Deduplication, Rate Limiting, Telemetry, DB 
     });
   });
 
-  describe("C: Database Connection Management", () => {
+  describe("C: Database Connection Management & Serverless Resilience", () => {
     it("reports singleton connection status and active reuse", () => {
       const status = getDbConnectionStatus();
       expect(status.engine).toBe("pglite");
       expect(status.reusedSingleton).toBe(true);
+    });
+
+    it("has all required migration and seed SQL fallbacks embedded for serverless environments", async () => {
+      const { EMBEDDED_SQL_FILES } = await import("@/lib/schema-sql");
+      const migration0001 = EMBEDDED_SQL_FILES["supabase/migrations/0001_hephzibah_schema.sql"];
+      expect(migration0001).toBeDefined();
+      expect(migration0001?.length).toBeGreaterThan(1000);
+      expect(EMBEDDED_SQL_FILES["supabase/seed.sql"]).toBeDefined();
     });
   });
 

@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const cspDirectives = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
+  "script-src-elem 'self' 'unsafe-inline' https://vercel.live",
   "style-src 'self' 'unsafe-inline' https://vercel.live",
+  "style-src-elem 'self' 'unsafe-inline' https://vercel.live",
   "img-src 'self' data: blob: https://res.cloudinary.com https://i.ytimg.com https://i.vimeocdn.com https://vercel.live https://vercel.com",
   "font-src 'self' data: https://fonts.gstatic.com https://assets.vercel.com",
   "connect-src 'self' https://api.cloudinary.com https://vercel.live wss://*.pusher.com https://*.pusher.com https://*.pusherapp.com",
@@ -16,6 +18,9 @@ const cspDirectives = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["@electric-sql/pglite"],
+  outputFileTracingIncludes: {
+    "/**": ["supabase/**/*"],
+  },
   images: {
     unoptimized: true,
   },
