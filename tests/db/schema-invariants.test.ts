@@ -262,6 +262,12 @@ describe("PostgreSQL 16 schema invariants & RLS verification matrix", () => {
   it("4. enforces RLS for anon, aal1 vs aal2 admin, and scoped permissions", async () => {
     await createTestBooking({ event_date: "2027-05-05" });
 
+    await db.query(
+      `insert into portfolio_items (kind, slug, title, status, client_consent_to_publish, published_at)
+       values ('photography', 'rls-test-item', 'RLS Test Item', 'published', true, now())
+       on conflict (slug) do nothing`
+    );
+
     // Anon cannot read bookings or email_outbox or call create_booking_request
     await db.transaction(async (tx) => {
       await tx.exec("set local role anon");
