@@ -170,7 +170,7 @@ export function SiteHeader({
               </div>
             </div>
 
-            {/* Navigation Links Column with North Arena Typography */}
+            {/* Navigation Links Column with Archivo Typography */}
             <nav className="flex-1 overflow-y-auto px-6 py-5 pl-8" aria-label="Mobile Navigation Drawer">
               <ul className="space-y-1.5">
                 {NAV_LINKS.map((item, idx) => {
@@ -194,7 +194,7 @@ export function SiteHeader({
                           <span className="font-mono text-xs font-black tracking-widest text-black/60 group-hover:text-black">
                             {num}
                           </span>
-                          <span className="font-north-arena text-3xl uppercase tracking-wider text-black transition-transform group-hover:translate-x-1.5">
+                          <span className="font-archivo font-black text-2xl uppercase tracking-wider text-black transition-transform group-hover:translate-x-1.5">
                             {item.label}
                           </span>
                         </div>
@@ -254,7 +254,7 @@ export function SiteHeader({
                 <Link
                   href="/book"
                   onClick={() => setMenuOpen(false)}
-                  className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[2px] border-2 border-black bg-black px-6 py-3.5 font-north-arena text-base uppercase tracking-wider !text-[#00E5FF] shadow-xl hover:bg-neutral-900 hover:!text-white transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[2px] border-2 border-black bg-black px-6 py-3.5 font-archivo font-black text-sm uppercase tracking-wider !text-[#00E5FF] shadow-xl hover:bg-neutral-900 hover:!text-white transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 >
                   Request a booking
                 </Link>
