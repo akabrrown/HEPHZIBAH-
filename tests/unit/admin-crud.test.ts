@@ -19,7 +19,7 @@ import {
   upsertAdminPortfolioItem,
   upsertAdminTestimonial,
 } from "@/modules/portfolio/service";
-import type { AdminSessionPayload } from "@/modules/admin/schema";
+import type { AdminSessionPayload } from "@/lib/auth";
 
 describe("Admin CRUD & Delete operations", () => {
   let db: PGlite;

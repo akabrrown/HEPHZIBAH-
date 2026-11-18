@@ -76,118 +76,118 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Hero section: Editorial Viewfinder Split (Above-the-fold Camera-First Studio Layout) */}
-      <section className="relative w-full overflow-hidden border-b border-[var(--hairline)] bg-[var(--black)] text-[var(--white)]">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:py-18">
-          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12 xl:gap-16">
-            {/* Left Column: Studio Editorial Narrative, Guarantees & Actions (col-span-7) */}
-            <div className="space-y-6 lg:col-span-7">
-              {/* Camera Shot Metadata Line */}
-              <div className="flex items-center gap-2.5 text-xs font-mono uppercase tracking-widest text-[var(--cyan)]">
-                <span className="inline-block h-2 w-2 bg-[var(--cyan)] shadow-[0_0_8px_var(--cyan)]" />
+      {/* Hero section: Cinematic Full-Landscape Viewfinder with Background Image */}
+      <section className="relative w-full min-h-[85vh] sm:min-h-[88vh] lg:min-h-[92vh] flex items-center overflow-hidden border-b border-[var(--hairline)] bg-[var(--black)] text-[var(--white)]">
+        {/* Full-bleed landscape background image layer */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <picture>
+            <source srcSet="/media/hephzibah-hero-bg.webp" type="image/webp" />
+            <img
+              src="/media/hephzibah-hero-bg.jpg"
+              alt="Hephzibah Media production crew with camera equipment on assignment in Accra, Ghana"
+              className="h-full w-full object-cover object-[center_22%] sm:object-[center_20%] md:object-[68%_center] lg:object-[65%_center] scale-100"
+              loading="eager"
+              fetchPriority="high"
+            />
+          </picture>
+
+          {/* Cinematic dark gradients for pristine text readability while leaving subjects visible */}
+          <div className="absolute inset-0 bg-black/45" />
+
+          {/* Directional gradient: Heavy dark fade on left (desktop), vertical fade from bottom (mobile) */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[var(--black)] via-[var(--black)]/80 via-60% to-[var(--black)]/40 lg:bg-gradient-to-r lg:from-[var(--black)] lg:via-[var(--black)]/85 lg:via-52% lg:to-black/20" />
+
+          {/* Top and bottom subtle vignettes */}
+          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[var(--black)]/80 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[var(--black)] to-transparent" />
+
+          {/* Subtle camera sensor grid overlay */}
+          <div className="pointer-events-none absolute inset-0 opacity-[0.03] mix-blend-overlay bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
+        </div>
+
+        {/* Viewfinder corner brackets framing the entire hero viewport */}
+        <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 h-6 w-6 border-l-2 border-t-2 border-[var(--cyan)] z-10" aria-hidden="true" />
+        <div className="pointer-events-none absolute right-4 top-4 sm:right-8 sm:top-8 h-6 w-6 border-r-2 border-t-2 border-[var(--cyan)] z-10" aria-hidden="true" />
+        <div className="pointer-events-none absolute left-4 bottom-4 sm:left-8 sm:bottom-8 h-6 w-6 border-l-2 border-b-2 border-[var(--cyan)] z-10" aria-hidden="true" />
+        <div className="pointer-events-none absolute right-4 bottom-4 sm:right-8 sm:bottom-8 h-6 w-6 border-r-2 border-b-2 border-[var(--cyan)] z-10" aria-hidden="true" />
+
+        {/* Hero Content Container */}
+        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+          <div className="max-w-2xl lg:max-w-3xl space-y-6">
+            {/* Camera Shot Metadata Line & Live HUD Badge */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="inline-flex items-center gap-2.5 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/80 px-3 py-1.5 backdrop-blur-md text-xs font-mono uppercase tracking-widest text-[var(--cyan)]">
+                <span className="inline-block h-2 w-2 rounded-full bg-[var(--cyan)] shadow-[0_0_8px_var(--cyan)]" />
                 <span>HEPHZIBAH MEDIA // FIELD CREW // GHANA</span>
               </div>
 
-              {/* Page Heading & Main Headline */}
-              <div className="space-y-3">
-                <PageHeading
-                  title={settings.business_name}
-                  ghostTitle="HEPHZIBAH"
-                />
-
-                <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--white)] sm:text-5xl lg:text-5xl xl:text-6xl leading-[1.08]">
-                  Photography, film and design for the moments that matter.
-                </h1>
-              </div>
-
-              <p className="max-w-xl text-base sm:text-lg leading-relaxed text-[var(--grey)]">
-                From live national robotics championships and high-profile summits to sacred traditional marriages and brand identity design. We deliver disciplined Ghanaian visual craft with honest date locks and transparent Ghana Cedi quotes.
-              </p>
-
-              {/* Action Buttons: Red Primary Rectangle Button + Cyan Outline Secondary */}
-              <div className="flex flex-wrap items-center gap-4 pt-2">
-                <ButtonLink
-                  href="/book"
-                  variant="primary"
-                  className="px-8 py-3.5 text-sm font-extrabold"
-                >
-                  Request a booking
-                </ButtonLink>
-                <ButtonLink
-                  href="/portfolio"
-                  variant="secondary"
-                  className="px-7 py-3.5 text-sm"
-                >
-                  See client work
-                </ButtonLink>
-              </div>
-
-              {/* Studio Instrument Readouts / Guarantees Bar */}
-              <div className="grid grid-cols-3 gap-4 border-t border-[var(--hairline)] pt-6 text-left">
-                <div>
-                  <div className="font-mono text-xs font-semibold text-[var(--cyan)]">01 / CREW</div>
-                  <div className="mt-1 font-display text-sm font-bold text-white">Dedicated Team</div>
-                  <div className="text-[11px] text-[var(--grey)]">Two-camera coverage</div>
-                </div>
-                <div>
-                  <div className="font-mono text-xs font-semibold text-[var(--cyan)]">02 / QUOTE</div>
-                  <div className="mt-1 font-display text-sm font-bold text-white">48-Hr Lock</div>
-                  <div className="text-[11px] text-[var(--grey)]">Fixed Cedi pricing</div>
-                </div>
-                <div>
-                  <div className="font-mono text-xs font-semibold text-[var(--cyan)]">03 / ARCHIVE</div>
-                  <div className="mt-1 font-display text-sm font-bold text-white">4K & RAW</div>
-                  <div className="text-[11px] text-[var(--grey)]">Lifetime cloud backup</div>
-                </div>
+              {/* REC telemetry badge */}
+              <div className="hidden sm:inline-flex items-center gap-2 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/80 px-3 py-1.5 backdrop-blur-md font-mono text-[11px] tracking-wider text-[var(--grey)]">
+                <span className="h-2 w-2 rounded-full bg-[var(--red)] animate-pulse" />
+                <span className="font-bold text-white">REC [●]</span>
+                <span className="text-[var(--cyan)] font-mono">PRIMARY RIG // 4K RAW</span>
               </div>
             </div>
 
-            {/* Right Column: Pristine Crew Photograph in Camera Viewfinder Mount (col-span-5) */}
-            <div className="lg:col-span-5">
-              <div className="relative mx-auto max-w-md lg:max-w-none">
-                {/* Viewfinder framing corner brackets: 4 L-shaped cyan corners (Design Brief 1.2) */}
-                <div className="relative overflow-hidden rounded-[2px] border border-[var(--hairline)] bg-[var(--ink-2)] p-2.5 shadow-2xl shadow-black/90 ring-1 ring-white/5">
-                  {/* Top-left corner */}
-                  <div className="pointer-events-none absolute left-3 top-3 h-5 w-5 border-l-2 border-t-2 border-[var(--cyan)] z-20" aria-hidden="true" />
-                  {/* Top-right corner */}
-                  <div className="pointer-events-none absolute right-3 top-3 h-5 w-5 border-r-2 border-t-2 border-[var(--cyan)] z-20" aria-hidden="true" />
-                  {/* Bottom-left corner */}
-                  <div className="pointer-events-none absolute bottom-3 left-3 h-5 w-5 border-l-2 border-b-2 border-[var(--cyan)] z-20" aria-hidden="true" />
-                  {/* Bottom-right corner */}
-                  <div className="pointer-events-none absolute right-3 bottom-3 h-5 w-5 border-r-2 border-b-2 border-[var(--cyan)] z-20" aria-hidden="true" />
+            {/* Main Headline & Ghost Title */}
+            <div className="space-y-3">
+              <PageHeading
+                title={settings.business_name}
+                ghostTitle="HEPHZIBAH"
+              />
 
-                  {/* Photograph container: Native aspect ratio, zero distortion, zero blurred wings */}
-                  <div className="relative aspect-[682/1024] w-full overflow-hidden bg-black rounded-[2px]">
-                    <picture>
-                      <source srcSet="/media/hephzibah-hero-crew.webp" type="image/webp" />
-                      <img
-                        src="/media/hephzibah-hero-crew.jpg"
-                        alt="Hephzibah Media production crew with camera and lighting rig on assignment at Ghana Robotics Competition"
-                        className="h-full w-full object-cover object-top transition-transform duration-700 hover:scale-[1.02]"
-                        loading="eager"
-                        fetchPriority="high"
-                      />
-                    </picture>
+              <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--white)] sm:text-5xl lg:text-6xl xl:text-6xl leading-[1.06]">
+                Photography, film and design for the moments that matter.
+              </h1>
+            </div>
 
-                    {/* Viewfinder Camera Status Bar on bottom of the image */}
-                    <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 pb-3 pt-8 text-[11px] font-mono text-white/90">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-[var(--red)]" />
-                        <span className="font-bold tracking-wider">ON ASSIGNMENT</span>
-                      </div>
-                      <span className="text-[var(--grey)]">GRC 26 &bull; ACCRA</span>
-                    </div>
-                  </div>
-                </div>
+            <p className="max-w-xl text-base sm:text-lg leading-relaxed text-[var(--grey)] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+              From live national robotics championships and high-profile summits to sacred traditional marriages and brand identity design. We deliver disciplined Ghanaian visual craft with honest date locks and transparent Ghana Cedi quotes.
+            </p>
 
-                {/* Technical camera metadata caption below the frame */}
-                <div className="mt-3 flex items-center justify-between px-1 text-[11px] font-mono text-[var(--grey)]">
-                  <span>ISO 400 &bull; 1/250s &bull; f/2.8</span>
-                  <span className="text-[var(--cyan)]">PRIMARY RIG // 4K RAW</span>
-                </div>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <ButtonLink
+                href="/book"
+                variant="primary"
+                className="px-8 py-3.5 text-sm font-extrabold shadow-lg shadow-black/50"
+              >
+                Request a booking
+              </ButtonLink>
+              <ButtonLink
+                href="/portfolio"
+                variant="secondary"
+                className="px-7 py-3.5 text-sm backdrop-blur-md bg-black/40 border-[var(--control-border)] hover:border-[var(--cyan)]"
+              >
+                See client work
+              </ButtonLink>
+            </div>
+
+            {/* Studio Instrument Readouts / Guarantees Bar */}
+            <div className="mt-8 grid grid-cols-3 gap-4 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/75 p-4 sm:p-5 backdrop-blur-md text-left shadow-2xl">
+              <div>
+                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">01 / CREW</div>
+                <div className="mt-1 font-display text-sm font-bold text-white">Dedicated Team</div>
+                <div className="text-[11px] text-[var(--grey)]">Two-camera coverage</div>
+              </div>
+              <div>
+                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">02 / QUOTE</div>
+                <div className="mt-1 font-display text-sm font-bold text-white">48-Hr Lock</div>
+                <div className="text-[11px] text-[var(--grey)]">Fixed Cedi pricing</div>
+              </div>
+              <div>
+                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">03 / ARCHIVE</div>
+                <div className="mt-1 font-display text-sm font-bold text-white">4K & RAW</div>
+                <div className="text-[11px] text-[var(--grey)]">Lifetime cloud backup</div>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Viewfinder Bottom Status Line */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 hidden sm:flex items-center justify-between px-8 text-[11px] font-mono text-[var(--grey)]">
+          <span>OPTICS: 24-70mm f/2.8 &bull; 1/250s &bull; ISO 400</span>
+          <span className="text-[var(--cyan)]">LOCATION: ACCRA, GHANA &bull; ACTIVE STUDIO</span>
         </div>
       </section>
 
