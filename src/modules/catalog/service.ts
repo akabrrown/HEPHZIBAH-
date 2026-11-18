@@ -227,6 +227,51 @@ export async function upsertAdminPackage(
   return saved;
 }
 
+export async function deleteAdminService(
+  admin: AdminSessionPayload,
+  id: string
+): Promise<void> {
+  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    // Delete associated packages first to satisfy foreign key constraint
+    await tx.query(`delete from packages where service_id = $1::uuid`, [id]);
+    const res = await tx.query(`delete from services where id = $1::uuid returning id`, [id]);
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "Service not found", "No service matches that ID.");
+    }
+  });
+
+  invalidateCache("catalog");
+  try {
+    revalidatePath("/");
+    revalidatePath("/services");
+    revalidatePath("/pricing");
+    revalidatePath("/book");
+  } catch {
+    // ignore outside request lifecycle
+  }
+}
+
+export async function deleteAdminPackage(
+  admin: AdminSessionPayload,
+  id: string
+): Promise<void> {
+  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    const res = await tx.query(`delete from packages where id = $1::uuid returning id`, [id]);
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "Package not found", "No package matches that ID.");
+    }
+  });
+
+  invalidateCache("catalog");
+  try {
+    revalidatePath("/pricing");
+    revalidatePath("/services");
+    revalidatePath("/book");
+  } catch {
+    // ignore outside request lifecycle
+  }
+}
+
 export async function updateAdminSiteSettings(
   admin: AdminSessionPayload,
   rawInput: unknown

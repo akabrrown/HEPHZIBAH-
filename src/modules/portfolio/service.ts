@@ -332,6 +332,21 @@ export async function deleteAdminMediaAsset(
   revalidatePortfolioPaths();
 }
 
+export async function deleteAdminPortfolioItem(
+  admin: AdminSessionPayload,
+  id: string
+): Promise<void> {
+  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    // Delete media assets first (even though cascade is present) to guarantee clean cleanup
+    await tx.query(`delete from media_assets where portfolio_item_id = $1::uuid`, [id]);
+    const res = await tx.query(`delete from portfolio_items where id = $1::uuid returning id`, [id]);
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
+    }
+  });
+  revalidatePortfolioPaths();
+}
+
 export async function listAdminContent(admin: AdminSessionPayload): Promise<{
   testimonials: Testimonial[];
   faqs: FaqItem[];
@@ -437,4 +452,30 @@ export async function upsertAdminFaq(
   });
   revalidatePortfolioPaths();
   return saved;
+}
+
+export async function deleteAdminTestimonial(
+  admin: AdminSessionPayload,
+  id: string
+): Promise<void> {
+  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    const res = await tx.query(`delete from testimonials where id = $1::uuid returning id`, [id]);
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "Testimonial not found", "No testimonial matches that ID.");
+    }
+  });
+  revalidatePortfolioPaths();
+}
+
+export async function deleteAdminFaq(
+  admin: AdminSessionPayload,
+  id: string
+): Promise<void> {
+  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    const res = await tx.query(`delete from faqs where id = $1::uuid returning id`, [id]);
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "FAQ not found", "No FAQ matches that ID.");
+    }
+  });
+  revalidatePortfolioPaths();
 }

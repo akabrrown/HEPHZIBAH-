@@ -15,7 +15,22 @@ import {
 
 function readErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === "object") {
-    const obj = data as { detail?: string; title?: string };
+    const obj = data as {
+      detail?: string;
+      title?: string;
+      fieldErrors?: Record<string, string[]>;
+    };
+    if (obj.fieldErrors && typeof obj.fieldErrors === "object") {
+      const messages: string[] = [];
+      for (const [field, errs] of Object.entries(obj.fieldErrors)) {
+        if (Array.isArray(errs) && errs.length > 0) {
+          messages.push(`${field}: ${errs.join(", ")}`);
+        }
+      }
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
     return obj.detail ?? obj.title ?? fallback;
   }
   return fallback;

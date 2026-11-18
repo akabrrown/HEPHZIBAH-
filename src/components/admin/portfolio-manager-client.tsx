@@ -39,7 +39,22 @@ function slugifyTitle(value: string): string {
 
 function readErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === "object") {
-    const obj = data as { detail?: string; title?: string };
+    const obj = data as {
+      detail?: string;
+      title?: string;
+      fieldErrors?: Record<string, string[]>;
+    };
+    if (obj.fieldErrors && typeof obj.fieldErrors === "object") {
+      const messages: string[] = [];
+      for (const [field, errs] of Object.entries(obj.fieldErrors)) {
+        if (Array.isArray(errs) && errs.length > 0) {
+          messages.push(`${field}: ${errs.join(", ")}`);
+        }
+      }
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
     return obj.detail ?? obj.title ?? fallback;
   }
   return fallback;
@@ -110,6 +125,26 @@ export function PortfolioListClient({
       setError("Network error while creating portfolio item.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteItem(itemToDelete: PortfolioItem) {
+    const confirmMsg = `Permanently delete "${itemToDelete.title}" and all attached gallery frames? This action cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/portfolio-items/${itemToDelete.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(readErrorMessage(data, "Could not delete portfolio item."));
+        return;
+      }
+      setItems((prev) => prev.filter((i) => i.id !== itemToDelete.id));
+      router.refresh();
+    } catch {
+      setError("Network error while deleting portfolio item.");
     }
   }
 
@@ -358,21 +393,32 @@ export function PortfolioListClient({
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
-                    <Link
-                      href={`/admin/portfolio/${item.id}`}
-                      className="inline-flex min-h-[44px] items-center text-sm font-medium text-[var(--cyan)] underline underline-offset-4"
-                    >
-                      Edit &amp; manage media
-                    </Link>
-                    {item.status === "published" && (
+                    <div className="flex items-center gap-3">
                       <Link
-                        href={`/portfolio/${item.slug}`}
-                        target="_blank"
-                        className="inline-flex min-h-[44px] items-center text-xs text-[var(--grey)] hover:text-[var(--white)]"
+                        href={`/admin/portfolio/${item.id}`}
+                        className="inline-flex min-h-[44px] items-center text-sm font-medium text-[var(--cyan)] underline underline-offset-4"
                       >
-                        View live
+                        Edit &amp; manage media
                       </Link>
-                    )}
+                      {item.status === "published" && (
+                        <Link
+                          href={`/portfolio/${item.slug}`}
+                          target="_blank"
+                          className="inline-flex min-h-[44px] items-center text-xs text-[var(--grey)] hover:text-[var(--white)]"
+                        >
+                          View live
+                        </Link>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItem(item)}
+                      className="inline-flex min-h-[44px] items-center gap-1 text-xs text-[var(--red)] hover:underline cursor-pointer"
+                      title="Permanently delete item"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Delete</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -491,6 +537,29 @@ export function PortfolioDetailClient({
     } catch {
       setBanner({ kind: "err", text: "Network error saving portfolio item." });
     } finally {
+      setSavingItem(false);
+    }
+  }
+
+  async function handleDeletePortfolioItem() {
+    const confirmMsg = `Permanently delete "${item.title}" and all ${assets.length} attached gallery frame(s)? This action cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    setSavingItem(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/portfolio-items/${item.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete portfolio item.") });
+        setSavingItem(false);
+        return;
+      }
+      router.push("/admin/portfolio");
+      router.refresh();
+    } catch {
+      setBanner({ kind: "err", text: "Network error deleting portfolio item." });
       setSavingItem(false);
     }
   }
@@ -675,6 +744,16 @@ export function PortfolioDetailClient({
               View live page
             </ButtonLink>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+            onClick={handleDeletePortfolioItem}
+            disabled={savingItem}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            <span>Delete item</span>
+          </Button>
         </div>
       </div>
 
@@ -865,6 +944,16 @@ export function PortfolioDetailClient({
           >
             <Check className="h-4 w-4" aria-hidden="true" />
             <span>{item.status === "published" ? "Save & keep published" : "Publish item"}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white ml-auto"
+            onClick={handleDeletePortfolioItem}
+            disabled={savingItem}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            <span>Delete item</span>
           </Button>
           {!canPublish && (
             <span className="text-xs text-[var(--grey)]">

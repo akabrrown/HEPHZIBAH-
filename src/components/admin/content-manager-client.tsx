@@ -23,10 +23,33 @@ type ContentTab = "services" | "packages" | "testimonials" | "faqs";
 
 function readErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === "object") {
-    const obj = data as { detail?: string; title?: string };
+    const obj = data as {
+      detail?: string;
+      title?: string;
+      fieldErrors?: Record<string, string[]>;
+    };
+    if (obj.fieldErrors && typeof obj.fieldErrors === "object") {
+      const messages: string[] = [];
+      for (const [field, errs] of Object.entries(obj.fieldErrors)) {
+        if (Array.isArray(errs) && errs.length > 0) {
+          messages.push(`${field}: ${errs.join(", ")}`);
+        }
+      }
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
     return obj.detail ?? obj.title ?? fallback;
   }
   return fallback;
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 export function ContentManagerClient({
@@ -53,6 +76,7 @@ export function ContentManagerClient({
   const [srvId, setSrvId] = useState<string | null>(null);
   const [srvKind, setSrvKind] = useState<ServiceKind>("photography");
   const [srvSlug, setSrvSlug] = useState("");
+  const [srvSlugTouched, setSrvSlugTouched] = useState(false);
   const [srvName, setSrvName] = useState("");
   const [srvSummary, setSrvSummary] = useState("");
   const [srvDesc, setSrvDesc] = useState("");
@@ -92,6 +116,7 @@ export function ContentManagerClient({
     setSrvId(s.id);
     setSrvKind(s.kind);
     setSrvSlug(s.slug);
+    setSrvSlugTouched(true);
     setSrvName(s.name);
     setSrvSummary(s.summary);
     setSrvDesc(s.description_md ?? "");
@@ -104,6 +129,7 @@ export function ContentManagerClient({
     setSrvId(null);
     setSrvKind("photography");
     setSrvSlug("");
+    setSrvSlugTouched(false);
     setSrvName("");
     setSrvSummary("");
     setSrvDesc("");
@@ -117,6 +143,12 @@ export function ContentManagerClient({
     setSaving(true);
     setBanner(null);
     try {
+      const finalSlug = (srvSlug.trim() || slugify(srvName)).trim();
+      if (!finalSlug) {
+        setBanner({ kind: "err", text: "Please enter a service name to generate a valid slug." });
+        setSaving(false);
+        return;
+      }
       const parsedPrice = srvStartingGhs.trim() ? Number(srvStartingGhs) : null;
       const res = await fetch("/api/admin/services", {
         method: "POST",
@@ -124,7 +156,7 @@ export function ContentManagerClient({
         body: JSON.stringify({
           ...(srvId ? { id: srvId } : {}),
           kind: srvKind,
-          slug: srvSlug.trim(),
+          slug: finalSlug,
           name: srvName.trim(),
           summary: srvSummary.trim(),
           description_md: srvDesc.trim() || null,
@@ -145,9 +177,35 @@ export function ContentManagerClient({
       }
       resetServiceForm();
       router.refresh();
-      setBanner({ kind: "ok", text: "Service saved." });
+      setBanner({ kind: "ok", text: "Service saved successfully." });
     } catch {
       setBanner({ kind: "err", text: "Network error saving service." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteService(service: Service) {
+    const confirmMsg = `Delete service "${service.name}"? Any packages belonging to this service will also be deleted.`;
+    if (!window.confirm(confirmMsg)) return;
+    setSaving(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/services?id=${encodeURIComponent(service.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete service.") });
+        return;
+      }
+      setServices((prev) => prev.filter((s) => s.id !== service.id));
+      setPackages((prev) => prev.filter((p) => p.service_id !== service.id));
+      if (srvId === service.id) resetServiceForm();
+      router.refresh();
+      setBanner({ kind: "ok", text: `Service "${service.name}" deleted.` });
+    } catch {
+      setBanner({ kind: "err", text: "Network error deleting service." });
     } finally {
       setSaving(false);
     }
@@ -184,6 +242,11 @@ export function ContentManagerClient({
     setSaving(true);
     setBanner(null);
     try {
+      if (!pkgServiceId) {
+        setBanner({ kind: "err", text: "Please create and select a Service first before adding a package." });
+        setSaving(false);
+        return;
+      }
       const priceNum = Number(pkgPriceGhs);
       const res = await fetch("/api/admin/packages", {
         method: "POST",
@@ -216,9 +279,34 @@ export function ContentManagerClient({
       }
       resetPackageForm();
       router.refresh();
-      setBanner({ kind: "ok", text: "Package saved." });
+      setBanner({ kind: "ok", text: "Package saved successfully." });
     } catch {
       setBanner({ kind: "err", text: "Network error saving package." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeletePackage(pkg: PackageItem) {
+    const confirmMsg = `Delete package "${pkg.name}"?`;
+    if (!window.confirm(confirmMsg)) return;
+    setSaving(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/packages?id=${encodeURIComponent(pkg.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete package.") });
+        return;
+      }
+      setPackages((prev) => prev.filter((p) => p.id !== pkg.id));
+      if (pkgId === pkg.id) resetPackageForm();
+      router.refresh();
+      setBanner({ kind: "ok", text: `Package "${pkg.name}" deleted.` });
+    } catch {
+      setBanner({ kind: "err", text: "Network error deleting package." });
     } finally {
       setSaving(false);
     }
@@ -249,6 +337,11 @@ export function ContentManagerClient({
     setSaving(true);
     setBanner(null);
     try {
+      if (testQuote.trim().length < 20) {
+        setBanner({ kind: "err", text: "Quote must be at least 20 characters long." });
+        setSaving(false);
+        return;
+      }
       const effectiveStatus: PublishStatus = testConsent ? testStatus : "draft";
       const res = await fetch("/api/admin/testimonials", {
         method: "POST",
@@ -275,9 +368,34 @@ export function ContentManagerClient({
       }
       resetTestimonialForm();
       router.refresh();
-      setBanner({ kind: "ok", text: "Testimonial saved." });
+      setBanner({ kind: "ok", text: "Testimonial saved successfully." });
     } catch {
       setBanner({ kind: "err", text: "Network error saving testimonial." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteTestimonial(testimonial: Testimonial) {
+    const confirmMsg = `Delete testimonial from "${testimonial.author_name}"?`;
+    if (!window.confirm(confirmMsg)) return;
+    setSaving(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/testimonials?id=${encodeURIComponent(testimonial.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete testimonial.") });
+        return;
+      }
+      setTestimonials((prev) => prev.filter((t) => t.id !== testimonial.id));
+      if (testId === testimonial.id) resetTestimonialForm();
+      router.refresh();
+      setBanner({ kind: "ok", text: "Testimonial deleted." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error deleting testimonial." });
     } finally {
       setSaving(false);
     }
@@ -327,9 +445,34 @@ export function ContentManagerClient({
       }
       resetFaqForm();
       router.refresh();
-      setBanner({ kind: "ok", text: "FAQ item saved." });
+      setBanner({ kind: "ok", text: "FAQ item saved successfully." });
     } catch {
       setBanner({ kind: "err", text: "Network error saving FAQ." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteFaq(faq: FaqItem) {
+    const confirmMsg = `Delete FAQ "${faq.question}"?`;
+    if (!window.confirm(confirmMsg)) return;
+    setSaving(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/faqs?id=${encodeURIComponent(faq.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete FAQ.") });
+        return;
+      }
+      setFaqs((prev) => prev.filter((f) => f.id !== faq.id));
+      if (faqId === faq.id) resetFaqForm();
+      router.refresh();
+      setBanner({ kind: "ok", text: "FAQ deleted." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error deleting FAQ." });
     } finally {
       setSaving(false);
     }
@@ -410,9 +553,20 @@ export function ContentManagerClient({
                     </p>
                   )}
                 </div>
-                <Button type="button" variant="secondary" onClick={() => loadService(s)}>
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => loadService(s)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                    onClick={() => handleDeleteService(s)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -459,7 +613,10 @@ export function ContentManagerClient({
                   required
                   className={`${INPUT_CLASSES} font-mono-meta`}
                   value={srvSlug}
-                  onChange={(e) => setSrvSlug(e.target.value)}
+                  onChange={(e) => {
+                    setSrvSlugTouched(true);
+                    setSrvSlug(e.target.value);
+                  }}
                   placeholder="event-photography"
                 />
               </FormField>
@@ -472,7 +629,13 @@ export function ContentManagerClient({
                 required
                 className={INPUT_CLASSES}
                 value={srvName}
-                onChange={(e) => setSrvName(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSrvName(val);
+                  if (!srvSlugTouched) {
+                    setSrvSlug(slugify(val));
+                  }
+                }}
               />
             </FormField>
 
@@ -531,9 +694,25 @@ export function ContentManagerClient({
               <span>Active on public services &amp; booking intake</span>
             </label>
 
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving..." : srvId ? "Update service" : "Create service"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving..." : srvId ? "Update service" : "Create service"}
+              </Button>
+              {srvId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  onClick={() => {
+                    const target = services.find((s) => s.id === srvId);
+                    if (target) handleDeleteService(target);
+                  }}
+                  disabled={saving}
+                >
+                  Delete service
+                </Button>
+              )}
+            </div>
           </form>
         </div>
       )}
@@ -560,9 +739,20 @@ export function ContentManagerClient({
                     {p.duration_hours ? ` · ${p.duration_hours} hrs` : ""}
                   </p>
                 </div>
-                <Button type="button" variant="secondary" onClick={() => loadPackage(p)}>
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => loadPackage(p)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                    onClick={() => handleDeletePackage(p)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -586,6 +776,12 @@ export function ContentManagerClient({
               )}
             </div>
 
+            {services.length === 0 && (
+              <div className="border border-[var(--amber)] bg-[var(--black)] p-3 text-xs text-[var(--amber)]">
+                No services exist yet. Please create a Service on the Services tab before adding packages.
+              </div>
+            )}
+
             <FormField label="Service" id="pkg-service" required>
               <select
                 id="pkg-service"
@@ -593,11 +789,15 @@ export function ContentManagerClient({
                 value={pkgServiceId}
                 onChange={(e) => setPkgServiceId(e.target.value)}
               >
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.kind})
-                  </option>
-                ))}
+                {services.length === 0 ? (
+                  <option value="">No services available</option>
+                ) : (
+                  services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.kind})
+                    </option>
+                  ))
+                )}
               </select>
             </FormField>
 
@@ -694,9 +894,25 @@ export function ContentManagerClient({
               </label>
             </div>
 
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving..." : pkgId ? "Update package" : "Create package"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="primary" disabled={saving || services.length === 0}>
+                {saving ? "Saving..." : pkgId ? "Update package" : "Create package"}
+              </Button>
+              {pkgId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  onClick={() => {
+                    const target = packages.find((p) => p.id === pkgId);
+                    if (target) handleDeletePackage(target);
+                  }}
+                  disabled={saving}
+                >
+                  Delete package
+                </Button>
+              )}
+            </div>
           </form>
         </div>
       )}
@@ -719,9 +935,20 @@ export function ContentManagerClient({
                     {t.author_context ? ` — ${t.author_context}` : ""}
                   </p>
                 </div>
-                <Button type="button" variant="secondary" onClick={() => loadTestimonial(t)}>
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => loadTestimonial(t)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                    onClick={() => handleDeleteTestimonial(t)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -779,6 +1006,19 @@ export function ContentManagerClient({
                 value={testQuote}
                 onChange={(e) => setTestQuote(e.target.value)}
               />
+              <div className="mt-1 flex justify-between text-[11px]">
+                <span className="text-[var(--grey)]">Min 20, max 600 characters</span>
+                <span
+                  className={
+                    testQuote.trim().length > 0 &&
+                    (testQuote.trim().length < 20 || testQuote.trim().length > 600)
+                      ? "text-[var(--red)] font-semibold"
+                      : "text-[var(--cyan)]"
+                  }
+                >
+                  {testQuote.trim().length} / 20-600 chars
+                </span>
+              </div>
             </FormField>
 
             <label className="flex min-h-[44px] items-center gap-3 text-sm cursor-pointer">
@@ -819,9 +1059,25 @@ export function ContentManagerClient({
               </FormField>
             </div>
 
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving..." : testId ? "Update testimonial" : "Save testimonial"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving..." : testId ? "Update testimonial" : "Save testimonial"}
+              </Button>
+              {testId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  onClick={() => {
+                    const target = testimonials.find((t) => t.id === testId);
+                    if (target) handleDeleteTestimonial(target);
+                  }}
+                  disabled={saving}
+                >
+                  Delete testimonial
+                </Button>
+              )}
+            </div>
           </form>
         </div>
       )}
@@ -841,9 +1097,20 @@ export function ContentManagerClient({
                   <h2 className="font-display text-base font-bold">{f.question}</h2>
                   <p className="text-xs text-[var(--grey)]">{f.answer}</p>
                 </div>
-                <Button type="button" variant="secondary" onClick={() => loadFaq(f)}>
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" onClick={() => loadFaq(f)}>
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                    onClick={() => handleDeleteFaq(f)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -915,9 +1182,25 @@ export function ContentManagerClient({
               </div>
             </div>
 
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving..." : faqId ? "Update FAQ" : "Save FAQ"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving..." : faqId ? "Update FAQ" : "Save FAQ"}
+              </Button>
+              {faqId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  onClick={() => {
+                    const target = faqs.find((f) => f.id === faqId);
+                    if (target) handleDeleteFaq(target);
+                  }}
+                  disabled={saving}
+                >
+                  Delete FAQ
+                </Button>
+              )}
+            </div>
           </form>
         </div>
       )}
