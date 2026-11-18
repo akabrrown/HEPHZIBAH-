@@ -1,3 +1,6 @@
+import type { NextRequest } from "next/server";
+import { ProblemError } from "@/lib/errors";
+
 interface RateWindow {
   timestamps: number[];
 }
@@ -80,4 +83,48 @@ export function isBotOrMaliciousCrawler(userAgent: string | null | undefined): b
   }
   const lower = userAgent.toLowerCase();
   return BANNED_BOT_SUBSTRINGS.some((banned) => lower.includes(banned));
+}
+
+export interface ProtectEndpointOptions {
+  keyPrefix: string;
+  maxRequests: number;
+  windowMs: number;
+  blockBots?: boolean;
+  customMessage?: string;
+}
+
+/**
+ * Enforces bot rejection and sliding-window rate limits on expensive API endpoints.
+ * Throws a structured ProblemError (403 for bots, 429 for rate limit exceeded).
+ */
+export function protectEndpoint(
+  req: NextRequest,
+  options: ProtectEndpointOptions
+): void {
+  const userAgent = req.headers.get("user-agent");
+  if (options.blockBots !== false && isBotOrMaliciousCrawler(userAgent)) {
+    throw new ProblemError(
+      403,
+      "bot_forbidden",
+      "Automated scanner blocked",
+      "Access denied by security bot policy."
+    );
+  }
+
+  const source = getClientSourceKey(req.headers);
+  const limit = checkSlidingWindowLimit(
+    `${options.keyPrefix}:${source}`,
+    options.maxRequests,
+    options.windowMs
+  );
+
+  if (!limit.allowed) {
+    throw new ProblemError(
+      429,
+      "rate_limited",
+      "Too many requests",
+      options.customMessage ?? "Please slow down and wait a few minutes before trying again.",
+      { headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
 }

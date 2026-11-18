@@ -10,6 +10,15 @@ import { getPublicPortfolioDetail, getPublicPortfolioList } from "@/modules/port
 
 export const revalidate = 300;
 
+export async function generateStaticParams() {
+  try {
+    const items = await getPublicPortfolioList();
+    return items.map((item) => ({ slug: item.slug }));
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {

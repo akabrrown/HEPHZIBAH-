@@ -4,11 +4,21 @@ import { requireAdmin } from "@/lib/auth";
 import { getServerEnv } from "@/lib/env";
 import { ProblemError, toProblemResponse } from "@/lib/errors";
 import { readJsonBody } from "@/lib/http";
+import { protectEndpoint } from "@/lib/rate-limit";
+import { recordApiRequest } from "@/lib/telemetry";
 import { generateRequestId } from "@/lib/tokens";
 
 export async function POST(req: NextRequest) {
+  const start = performance.now();
   const requestId = generateRequestId();
   try {
+    protectEndpoint(req, {
+      keyPrefix: "upload-sign:5m",
+      maxRequests: 30,
+      windowMs: 5 * 60_000,
+      customMessage: "Upload signature rate limit reached. Please wait a few moments.",
+    });
+
     await requireAdmin("content");
     const body = (await readJsonBody(req).catch(() => ({}))) as { folder?: string };
     const env = getServerEnv();
@@ -27,6 +37,8 @@ export async function POST(req: NextRequest) {
     const paramsToSign = `folder=${folder}&timestamp=${timestamp}${env.CLOUDINARY_API_SECRET}`;
     const signature = crypto.createHash("sha1").update(paramsToSign).digest("hex");
 
+    recordApiRequest("POST", "/api/admin/uploads/sign", performance.now() - start);
+
     return NextResponse.json(
       {
         signature,
@@ -41,6 +53,7 @@ export async function POST(req: NextRequest) {
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {
+    recordApiRequest("POST", "/api/admin/uploads/sign", performance.now() - start);
     return toProblemResponse(err, req.nextUrl.pathname, requestId);
   }
 }

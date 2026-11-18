@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dedupeRequest } from "@/lib/dedupe";
 import { ProblemError, toProblemResponse } from "@/lib/errors";
 import { readJsonBody } from "@/lib/http";
 import { checkSlidingWindowLimit, getClientSourceKey } from "@/lib/rate-limit";
+import { recordApiRequest } from "@/lib/telemetry";
 import { generateRequestId } from "@/lib/tokens";
 import { submitBookingRequest } from "@/modules/booking/service";
 
 export async function POST(req: NextRequest) {
+  const start = performance.now();
   const requestId = generateRequestId();
   try {
     const source = getClientSourceKey(req.headers);
@@ -33,7 +36,17 @@ export async function POST(req: NextRequest) {
 
     const body = await readJsonBody(req);
     const idempotencyKey = req.headers.get("idempotency-key");
-    const result = await submitBookingRequest(body, idempotencyKey);
+
+    // Deduplicate concurrent identical submissions using idempotency key or client source + date
+    const dedupeKey = idempotencyKey
+      ? `booking-idem:${idempotencyKey}`
+      : `booking-sub:${source}:${JSON.stringify(body).slice(0, 80)}`;
+
+    const result = await dedupeRequest(dedupeKey, () =>
+      submitBookingRequest(body, idempotencyKey)
+    );
+
+    recordApiRequest("POST", "/api/bookings", performance.now() - start);
 
     return NextResponse.json(
       {
@@ -49,6 +62,7 @@ export async function POST(req: NextRequest) {
       }
     );
   } catch (err) {
+    recordApiRequest("POST", "/api/bookings", performance.now() - start);
     return toProblemResponse(err, req.nextUrl.pathname, requestId);
   }
 }

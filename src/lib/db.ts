@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { citext } from "@electric-sql/pglite/contrib/citext";
+import { recordDbQuery } from "@/lib/telemetry";
 import {
   DEFAULT_BOOKINGS_ADMIN_ID,
   DEFAULT_CONTENT_ADMIN_ID,
@@ -238,11 +239,49 @@ export async function resetGlobalDbForTests(): Promise<PGlite> {
   return fresh;
 }
 
+function wrapInstrumentedTx(tx: DbTx): DbTx {
+  return {
+    async query<T = Record<string, unknown>>(
+      text: string,
+      params?: unknown[]
+    ): Promise<DbQueryResult<T>> {
+      const start = performance.now();
+      try {
+        return await tx.query<T>(text, params);
+      } finally {
+        const durationMs = performance.now() - start;
+        recordDbQuery(text, durationMs);
+      }
+    },
+    async exec(sql: string): Promise<unknown> {
+      const start = performance.now();
+      try {
+        return await tx.exec(sql);
+      } finally {
+        const durationMs = performance.now() - start;
+        recordDbQuery(sql, durationMs);
+      }
+    },
+  };
+}
+
+export function getDbConnectionStatus(): {
+  isInitialized: boolean;
+  engine: "pglite" | "postgres";
+  reusedSingleton: boolean;
+} {
+  return {
+    isInitialized: Boolean(globalThis.__hephzibahPgPromise),
+    engine: "pglite",
+    reusedSingleton: true,
+  };
+}
+
 export async function withServiceRole<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role service_role");
-    return fn(tx as unknown as DbTx);
+    return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }
 
@@ -250,7 +289,7 @@ export async function withAnonRole<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> 
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role anon");
-    return fn(tx as unknown as DbTx);
+    return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }
 
@@ -264,13 +303,13 @@ export async function withAdminRole<T>(
     await tx.exec("set local role authenticated");
     await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [adminId]);
     await tx.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
-    return fn(tx as unknown as DbTx);
+    return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }
 
 export async function withDbSuperuser<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
   const db = await getDb();
   return db.transaction(async (tx) => {
-    return fn(tx as unknown as DbTx);
+    return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }
