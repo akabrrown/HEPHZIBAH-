@@ -76,70 +76,75 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Hero section: Studio editorial showcase with full-fidelity Ghana Robotics crew photograph */}
+      {/* Hero section: Studio editorial showcase with full landscape Ghana Robotics crew photograph */}
       <section className="relative w-full overflow-hidden border-b border-[var(--hairline)] bg-[var(--black)] text-[var(--white)]">
-        {/* Subtle atmospheric ambient glow from the crew assignment image */}
+        {/* Subtle atmospheric ambient glow from the landscape asset */}
         <div className="absolute inset-0 z-0 opacity-15 dark:opacity-20 pointer-events-none overflow-hidden" aria-hidden="true">
           <picture>
-            <source srcSet="/media/hephzibah-hero-crew.webp" type="image/webp" />
+            <source srcSet="/media/hephzibah-hero-landscape.webp" type="image/webp" />
             <img
-              src="/media/hephzibah-hero-crew.jpg"
+              src="/media/hephzibah-hero-landscape.jpg"
               alt=""
-              className="h-full w-full object-cover blur-3xl scale-110"
+              className="h-full w-full object-cover blur-3xl scale-125"
             />
           </picture>
         </div>
 
         {/* Content Container */}
-        <div className="relative z-10 mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
-          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
-            {/* Left: Studio Editorial Narrative & CTAs */}
-            <div className="space-y-6 lg:col-span-7">
-              <PageHeading
-                title={settings.business_name}
-                ghostTitle="HEPHZIBAH"
-              />
+        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-24">
+          {/* Studio Editorial Narrative & CTAs */}
+          <div className="mx-auto max-w-4xl text-center space-y-6">
+            <PageHeading
+              title={settings.business_name}
+              ghostTitle="HEPHZIBAH"
+              align="center"
+            />
 
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--white)] sm:text-4xl lg:text-5xl leading-tight">
-                Photography, film and design for the moments that matter.
-              </h1>
+            <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--white)] sm:text-5xl lg:text-6xl leading-[1.1]">
+              Photography, film and design for the moments that matter.
+            </h1>
 
-              <p className="max-w-xl text-base sm:text-lg leading-relaxed text-[var(--grey)]">
-                From live national robotics championships and high-profile summits to sacred traditional marriages and brand identity design. We deliver disciplined Ghanaian visual craft with honest date locks and transparent Ghana Cedi quotes.
-              </p>
+            <p className="mx-auto max-w-2xl text-base sm:text-lg leading-relaxed text-[var(--grey)]">
+              From live national robotics championships and high-profile summits to sacred traditional marriages and brand identity design. We deliver disciplined Ghanaian visual craft with honest date locks and transparent Ghana Cedi quotes.
+            </p>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-4 pt-2">
-                <ButtonLink
-                  href="/book"
-                  variant="cyan"
-                  className="shadow-[0_0_25px_rgba(0,229,255,0.35)] px-7 py-3 text-sm font-extrabold"
-                >
-                  Request a booking
-                </ButtonLink>
-                <ButtonLink
-                  href="/portfolio"
-                  variant="secondary"
-                  className="px-6 py-3 text-sm"
-                >
-                  See client work
-                </ButtonLink>
-              </div>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+              <ButtonLink
+                href="/book"
+                variant="cyan"
+                className="shadow-[0_0_25px_rgba(0,229,255,0.35)] px-7 py-3 text-sm font-extrabold"
+              >
+                Request a booking
+              </ButtonLink>
+              <ButtonLink
+                href="/portfolio"
+                variant="secondary"
+                className="px-6 py-3 text-sm"
+              >
+                See client work
+              </ButtonLink>
             </div>
+          </div>
 
-            {/* Right: Pure, Unframed Hero Photograph (100% visible, clean editorial display) */}
-            <div className="lg:col-span-5">
-              <div className="relative aspect-[1024/981] w-full overflow-hidden rounded-xl sm:rounded-2xl shadow-2xl shadow-black/80 ring-1 ring-white/10 transition-transform duration-500 hover:scale-[1.01]">
-                <picture>
-                  <source srcSet="/media/hephzibah-hero-crew.webp" type="image/webp" />
-                  <img
-                    src="/media/hephzibah-hero-crew.jpg"
-                    alt="Hephzibah Media production crew with camera and lighting rig on assignment at Ghana Robotics Competition"
-                    className="h-full w-full object-cover"
-                    loading="eager"
-                    fetchPriority="high"
-                  />
-                </picture>
+          {/* Full Landscape Photographic Showcase (100% visible, wide cinematic view) */}
+          <div className="relative mt-10 w-full sm:mt-14 lg:mt-16">
+            <div className="relative mx-auto aspect-[16/9] w-full max-w-6xl overflow-hidden rounded-xl sm:rounded-2xl border border-white/10 bg-black/60 shadow-2xl shadow-black/80 ring-1 ring-white/10 transition-transform duration-500 hover:scale-[1.005]">
+              <picture>
+                <source srcSet="/media/hephzibah-hero-landscape.webp" type="image/webp" />
+                <img
+                  src="/media/hephzibah-hero-landscape.jpg"
+                  alt="Hephzibah Media production crew with camera and lighting rig on assignment at Ghana Robotics Competition"
+                  className="h-full w-full object-cover object-center"
+                  loading="eager"
+                  fetchPriority="high"
+                />
+              </picture>
+
+              {/* Studio badge / caption on bottom */}
+              <div className="absolute bottom-3 left-3 sm:bottom-5 sm:left-5 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-black/80 px-3.5 py-1.5 backdrop-blur-md text-[11px] sm:text-xs text-white/90">
+                <span className="inline-block h-2 w-2 rounded-full bg-[var(--cyan)] shadow-[0_0_8px_var(--cyan)] animate-pulse" />
+                <span className="font-semibold uppercase tracking-wider font-mono">On Assignment &bull; Ghana Robotics Competition</span>
               </div>
             </div>
           </div>
