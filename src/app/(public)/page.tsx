@@ -7,7 +7,7 @@ import { FramingCorners, ShotCaption } from "@/components/ui/viewfinder";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 import { getPublicPortfolioList, getPublicTestimonials } from "@/modules/portfolio/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Hephzibah Media — Photography, Videography & Graphic Design",

@@ -4,7 +4,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { PageHeading } from "@/components/ui/page-heading";
 import { getPublicFaqs } from "@/modules/portfolio/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Frequently Asked Questions",

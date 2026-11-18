@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
+import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import {
   addDaysIso,
   diffDaysIso,
@@ -63,10 +64,15 @@ export async function getPublicUnavailableDates(
   fromDate?: string,
   toDate?: string
 ): Promise<{ dates: string[]; minLeadDays: number; maxAdvanceDays: number }> {
-  const settings = await withAnonRole((tx) => findSiteSettings(tx));
   const today = getAccraTodayIso();
   const from = fromDate ?? today;
   const to = toDate ?? addDaysIso(from, 400);
+
+  const cacheKey = `booking:unavailable:${from}:${to}`;
+  const cached = getCached<{ dates: string[]; minLeadDays: number; maxAdvanceDays: number }>(cacheKey);
+  if (cached) return cached;
+
+  const settings = await withAnonRole((tx) => findSiteSettings(tx));
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
     throw new ProblemError(422, "invalid_range", "Invalid date range", "Use YYYY-MM-DD dates.");
@@ -82,11 +88,13 @@ export async function getPublicUnavailableDates(
   }
 
   const dates = await withAnonRole((tx) => findUnavailableDatesInRange(tx, from, to));
-  return {
+  const result = {
     dates,
     minLeadDays: settings.min_lead_days,
     maxAdvanceDays: settings.max_advance_days,
   };
+  setCached(cacheKey, result, 60);
+  return result;
 }
 
 export interface BookingSubmitResult {
@@ -487,6 +495,7 @@ export async function cancelBookingByClient(
   });
 
   await processEmailOutbox().catch(() => undefined);
+  invalidateCache("booking");
   try {
     revalidatePath("/book");
   } catch {
@@ -743,6 +752,7 @@ export async function transitionBookingByAdmin(
   }
 
   await processEmailOutbox().catch(() => undefined);
+  invalidateCache("booking");
   try {
     revalidatePath("/book");
   } catch {
@@ -833,6 +843,7 @@ export async function addBlockedDateAdmin(
     return res.rows[0]!;
   });
 
+  invalidateCache("booking");
   try {
     revalidatePath("/book");
   } catch {
@@ -848,6 +859,7 @@ export async function removeBlockedDateAdmin(
   await withAdminRole(admin.adminId, admin.aal, async (tx) => {
     await tx.query(`delete from blocked_dates where id = $1::uuid`, [blockedId]);
   });
+  invalidateCache("booking");
   try {
     revalidatePath("/book");
   } catch {

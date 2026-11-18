@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
+import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { normalizeGhanaPhone } from "@/lib/dates";
 import { withAdminRole, withAnonRole, withServiceRole } from "@/lib/db";
 import { ProblemError } from "@/lib/errors";
@@ -28,13 +29,23 @@ export async function getPublicLegalDocument(slug: LegalSlug): Promise<{
   current: LegalDocumentRecord | null;
   history: LegalDocumentRecord[];
 }> {
-  return withAnonRole(async (tx) => {
+  const cacheKey = `legal:doc:${slug}`;
+  const cached = getCached<{
+    current: LegalDocumentRecord | null;
+    history: LegalDocumentRecord[];
+  }>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole(async (tx) => {
     const [current, history] = await Promise.all([
       findCurrentLegalDocumentBySlug(tx, slug),
       findLegalHistoryBySlug(tx, slug),
     ]);
     return { current, history };
   });
+
+  setCached(cacheKey, result, 600);
+  return result;
 }
 
 export async function getPublicPolicyVersions(): Promise<{
@@ -42,12 +53,23 @@ export async function getPublicPolicyVersions(): Promise<{
   termsVersion: string;
   bookingPolicyVersion: string;
 }> {
+  const cacheKey = "legal:policy_versions";
+  const cached = getCached<{
+    privacyVersion: string;
+    termsVersion: string;
+    bookingPolicyVersion: string;
+  }>(cacheKey);
+  if (cached) return cached;
+
   const docs = await withAnonRole((tx) => findCurrentLegalDocuments(tx));
-  return {
+  const result = {
     privacyVersion: docs.find((d) => d.slug === "privacy")?.version ?? "1.0",
     termsVersion: docs.find((d) => d.slug === "terms")?.version ?? "1.0",
     bookingPolicyVersion: docs.find((d) => d.slug === "booking-policy")?.version ?? "1.0",
   };
+
+  setCached(cacheKey, result, 600);
+  return result;
 }
 
 export async function submitPublicEnquiry(rawInput: unknown): Promise<{
@@ -155,6 +177,7 @@ export async function publishAdminLegalDocument(
     return res.rows[0]!;
   });
 
+  invalidateCache("legal");
   try {
     revalidatePath(`/${saved.slug}`);
     revalidatePath("/book");

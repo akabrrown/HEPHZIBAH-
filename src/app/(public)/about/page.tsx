@@ -4,7 +4,7 @@ import { PageHeading } from "@/components/ui/page-heading";
 import { ShotCaption } from "@/components/ui/viewfinder";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "About",

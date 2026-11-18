@@ -8,7 +8,7 @@ import { buildWhatsAppUrl } from "@/lib/dates";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 import { getPublicPolicyVersions } from "@/modules/content-legal/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Contact",

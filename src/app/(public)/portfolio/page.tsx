@@ -7,7 +7,7 @@ import { serviceKindValues, type ServiceKind } from "@/modules/catalog/schema";
 import { getPublicCatalogue } from "@/modules/catalog/service";
 import { getPublicPortfolioList } from "@/modules/portfolio/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Portfolio",

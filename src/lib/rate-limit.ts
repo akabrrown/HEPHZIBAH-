@@ -58,3 +58,26 @@ export function getClientSourceKey(headers: Headers): string {
 export function isHoneypotTriggered(honeypotValue: string | null | undefined): boolean {
   return typeof honeypotValue === "string" && honeypotValue.trim().length > 0;
 }
+
+const BANNED_BOT_SUBSTRINGS = [
+  "sqlmap",
+  "nikto",
+  "masscan",
+  "nmap",
+  "acunetix",
+  "havij",
+  "dirbuster",
+  "gobuster",
+  "wprecon",
+  "wp-scan",
+  "censys",
+  "shodan",
+];
+
+export function isBotOrMaliciousCrawler(userAgent: string | null | undefined): boolean {
+  if (!userAgent || userAgent.trim().length === 0) {
+    return true;
+  }
+  const lower = userAgent.toLowerCase();
+  return BANNED_BOT_SUBSTRINGS.some((banned) => lower.includes(banned));
+}

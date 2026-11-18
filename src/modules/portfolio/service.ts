@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
+import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { withAdminRole, withAnonRole } from "@/lib/db";
 import { ProblemError } from "@/lib/errors";
 import type { ServiceKind } from "@/modules/catalog/schema";
@@ -29,19 +30,43 @@ export async function getPublicPortfolioList(filters?: {
   occasionSlug?: string;
   featuredOnly?: boolean;
 }): Promise<PortfolioItem[]> {
-  return withAnonRole((tx) => findPublishedPortfolioItems(tx, filters));
+  const cacheKey = `portfolio:list:${filters?.kind ?? "all"}:${filters?.occasionSlug ?? "all"}:${filters?.featuredOnly ? "feat" : "all"}`;
+  const cached = getCached<PortfolioItem[]>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole((tx) => findPublishedPortfolioItems(tx, filters));
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function getPublicPortfolioDetail(slug: string): Promise<PortfolioItem | null> {
-  return withAnonRole((tx) => findPortfolioItemBySlug(tx, slug));
+  const cacheKey = `portfolio:detail:${slug}`;
+  const cached = getCached<PortfolioItem | null>(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const result = await withAnonRole((tx) => findPortfolioItemBySlug(tx, slug));
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {
-  return withAnonRole((tx) => findPublishedTestimonials(tx));
+  const cacheKey = "portfolio:testimonials";
+  const cached = getCached<Testimonial[]>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole((tx) => findPublishedTestimonials(tx));
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function getPublicFaqs(): Promise<FaqItem[]> {
-  return withAnonRole((tx) => findPublishedFaqs(tx));
+  const cacheKey = "portfolio:faqs";
+  const cached = getCached<FaqItem[]>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole((tx) => findPublishedFaqs(tx));
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function listAdminPortfolio(admin: AdminSessionPayload): Promise<PortfolioItem[]> {
@@ -62,6 +87,7 @@ export async function getAdminPortfolioDetail(
 }
 
 function revalidatePortfolioPaths(slug?: string): void {
+  invalidateCache("portfolio");
   try {
     revalidatePath("/");
     revalidatePath("/portfolio");

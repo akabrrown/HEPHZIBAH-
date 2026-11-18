@@ -6,7 +6,7 @@ import { formatGhsFromMinor } from "@/lib/money";
 import { serviceKindValues, type ServiceKind } from "@/modules/catalog/schema";
 import { getPublicCatalogue } from "@/modules/catalog/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Packages and Pricing",

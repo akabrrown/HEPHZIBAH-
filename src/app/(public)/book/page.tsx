@@ -7,7 +7,7 @@ import { serviceKindValues, type ServiceKind } from "@/modules/catalog/schema";
 import { getPublicCatalogue, getPublicSiteSettings } from "@/modules/catalog/service";
 import { getPublicPolicyVersions } from "@/modules/content-legal/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Request a booking",

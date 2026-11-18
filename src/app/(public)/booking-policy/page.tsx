@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalDocumentView } from "@/components/legal/legal-document-view";
 import { getPublicLegalDocument } from "@/modules/content-legal/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 600;
 
 export const metadata: Metadata = {
   title: "Booking, Cancellation and Refund Policy",

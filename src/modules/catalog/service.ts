@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
+import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { withAdminRole, withAnonRole } from "@/lib/db";
 import { ProblemError } from "@/lib/errors";
 import {
@@ -22,7 +23,13 @@ import {
 } from "./schema";
 
 export async function getPublicSiteSettings(): Promise<SiteSettings> {
-  return withAnonRole((tx) => findSiteSettings(tx));
+  const cacheKey = "catalog:site_settings";
+  const cached = getCached<SiteSettings>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole((tx) => findSiteSettings(tx));
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function getPublicCatalogue(kind?: ServiceKind): Promise<{
@@ -30,7 +37,15 @@ export async function getPublicCatalogue(kind?: ServiceKind): Promise<{
   services: Service[];
   packages: PackageItem[];
 }> {
-  return withAnonRole(async (tx) => {
+  const cacheKey = `catalog:public:${kind ?? "all"}`;
+  const cached = getCached<{
+    occasions: Occasion[];
+    services: Service[];
+    packages: PackageItem[];
+  }>(cacheKey);
+  if (cached) return cached;
+
+  const result = await withAnonRole(async (tx) => {
     const [occasions, services, packages] = await Promise.all([
       findActiveOccasions(tx, kind),
       findActiveServices(tx, kind),
@@ -38,6 +53,9 @@ export async function getPublicCatalogue(kind?: ServiceKind): Promise<{
     ]);
     return { occasions, services, packages };
   });
+
+  setCached(cacheKey, result, 300);
+  return result;
 }
 
 export async function listAdminServicesAndPackages(admin: AdminSessionPayload): Promise<{
@@ -114,6 +132,7 @@ export async function upsertAdminService(
     return res.rows[0]!;
   });
 
+  invalidateCache("catalog");
   try {
     revalidatePath("/");
     revalidatePath("/services");
@@ -193,6 +212,7 @@ export async function upsertAdminPackage(
     return res.rows[0]!;
   });
 
+  invalidateCache("catalog");
   try {
     revalidatePath("/pricing");
     revalidatePath("/services");
@@ -251,6 +271,7 @@ export async function updateAdminSiteSettings(
     return res.rows[0]!;
   });
 
+  invalidateCache("catalog");
   try {
     revalidatePath("/", "layout");
   } catch {

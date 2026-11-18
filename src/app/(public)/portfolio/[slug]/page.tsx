@@ -8,7 +8,7 @@ import { PortfolioTile } from "@/components/ui/portfolio-tile";
 import { RecDot } from "@/components/ui/viewfinder";
 import { getPublicPortfolioDetail, getPublicPortfolioList } from "@/modules/portfolio/service";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export async function generateMetadata({
   params,
