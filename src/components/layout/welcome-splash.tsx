@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowRight, Camera, Film, Layers, Sparkles } from "lucide-react";
+import { ArrowRight, Calendar, Camera, Film, Layers } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { BrandLogo } from "@/components/ui/brand-logo";
-import { FramingCorners, RecDot, ShotCaption } from "@/components/ui/viewfinder";
+import { FramingCorners, ShotCaption } from "@/components/ui/viewfinder";
 
 const SPLASH_SEEN_KEY = "hm_welcome_splash_seen_v2";
 
@@ -78,16 +78,9 @@ export function WelcomeSplash({ businessName }: { businessName: string }) {
       }`}
     >
       <div className="w-full max-w-xl max-h-[92dvh] overflow-y-auto rounded-[2px] shadow-2xl">
-        <FramingCorners active className="border-2 border-[var(--cyan)]/40 bg-[var(--ink-2)] p-6 sm:p-10 shadow-[0_0_50px_rgba(0,229,255,0.15)]">
-          {/* Header HUD */}
+        <FramingCorners active className="border border-[var(--hairline)] bg-[var(--ink-2)] p-6 sm:p-10">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] pb-4">
             <ShotCaption parts={["HEPHZIBAH MEDIA", "ACCRA · GHANA", "STUDIO DESK"]} />
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[10px] font-bold text-[var(--cyan)] uppercase tracking-wider">
-                VIEWFINDER
-              </span>
-              <RecDot label="LIVE" />
-            </div>
           </div>
 
           {/* Studio Brand & Tagline */}
@@ -150,16 +143,16 @@ export function WelcomeSplash({ businessName }: { businessName: string }) {
             <Link
               href="/book"
               onClick={dismiss}
-              className="w-full sm:w-auto inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[2px] border border-[var(--cyan)]/50 bg-[var(--black)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-[var(--cyan)] hover:bg-[var(--cyan)]/15 transition-all"
+              className="w-full sm:w-auto inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[2px] border border-[var(--control-border)] bg-[var(--black)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] transition-colors"
             >
-              <Sparkles className="h-4 w-4" />
+              <Calendar className="h-4 w-4" aria-hidden="true" />
               <span>Book Session</span>
             </Link>
 
             <button
               type="button"
               onClick={dismiss}
-              className="w-full sm:w-auto font-display inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-7 py-2.5 text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] shadow-[0_0_20px_rgba(0,229,255,0.4)] transition-all hover:brightness-110 hover:shadow-[0_0_30px_rgba(0,229,255,0.6)] cursor-pointer active:scale-95"
+              className="w-full sm:w-auto font-display inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-7 py-2.5 text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] transition-colors hover:brightness-110 cursor-pointer active:scale-95"
             >
               <span>Enter Studio</span>
               <ArrowRight className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />

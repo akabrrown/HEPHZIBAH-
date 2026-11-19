@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { Pool, type PoolClient } from "pg";
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { citext } from "@electric-sql/pglite/contrib/citext";
@@ -160,13 +161,16 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
       [admin.id, admin.email, admin.passwordHash, admin.totpSecret]
     );
     await pg.query(
-      `insert into admin_users (id, display_name, scopes, is_active)
-       values ($1, $2, $3, true)
+      `insert into admin_users (id, email, password_hash, totp_secret, display_name, scopes, is_active)
+       values ($1, $2, $3, $4, $5, $6, true)
        on conflict (id) do update
-         set display_name = excluded.display_name,
+         set email = excluded.email,
+             password_hash = excluded.password_hash,
+             totp_secret = excluded.totp_secret,
+             display_name = excluded.display_name,
              scopes = excluded.scopes,
              is_active = true`,
-      [admin.id, admin.displayName, admin.scopes]
+      [admin.id, admin.email, admin.passwordHash, admin.totpSecret, admin.displayName, admin.scopes]
     );
   }
 }
@@ -178,6 +182,11 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
   if (existing.rows[0]?.tbl) {
     await pg.exec(POST_SCHEMA_ROLE_GRANTS_SQL);
     await pg.exec(`
+      alter table admin_users
+        add column if not exists email text,
+        add column if not exists password_hash text,
+        add column if not exists totp_secret text;
+
       alter table bookings
         add column if not exists gallery_url text check (gallery_url is null or char_length(gallery_url) <= 1000),
         add column if not exists gallery_pin text check (gallery_pin is null or char_length(gallery_pin) <= 60),
@@ -214,6 +223,12 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
     "supabase/migrations/0003_gallery_downloads.sql"
   );
   await pg.exec(gallerySql);
+  await pg.exec(`
+    alter table admin_users
+      add column if not exists email text,
+      add column if not exists password_hash text,
+      add column if not exists totp_secret text;
+  `);
   await pg.exec(POST_SCHEMA_ROLE_GRANTS_SQL);
 
   const seedSql = readSqlFile("supabase/seed.sql");
@@ -224,6 +239,7 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
 
 declare global {
   var __hephzibahPgPromise: Promise<PGlite> | undefined;
+  var __hephzibahPgPool: Pool | undefined;
 }
 
 function resolvePgliteDataDir(): string {
@@ -322,11 +338,88 @@ function wrapInstrumentedTx(tx: DbTx): DbTx {
   };
 }
 
+function shouldUsePostgresPool(): boolean {
+  return Boolean(process.env.DATABASE_URL && process.env.NODE_ENV !== "test");
+}
+
+function getPgPool(): Pool {
+  if (!globalThis.__hephzibahPgPool) {
+    const connectionString = process.env.DATABASE_URL;
+    globalThis.__hephzibahPgPool = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
+  }
+  return globalThis.__hephzibahPgPool;
+}
+
+async function runWithPoolTx<T>(
+  setup: (client: PoolClient) => Promise<void>,
+  fn: (tx: DbTx) => Promise<T>
+): Promise<T> {
+  const pool = getPgPool();
+  const client = await pool.connect();
+  let pending: Promise<unknown> = Promise.resolve();
+  const enqueue = <R>(work: () => Promise<R>): Promise<R> => {
+    const next = pending.then(work, work);
+    pending = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
+  try {
+    await client.query("BEGIN");
+    await setup(client);
+    const txAdapter: DbTx = {
+      query<R = Record<string, unknown>>(
+        text: string,
+        params?: unknown[]
+      ): Promise<DbQueryResult<R>> {
+        return enqueue(async () => {
+          const res = await client.query(text, params);
+          return {
+            rows: res.rows as R[],
+            affectedRows: res.rowCount ?? undefined,
+          };
+        });
+      },
+      exec(sql: string): Promise<unknown> {
+        return enqueue(() => client.query(sql));
+      },
+    };
+    const result = await fn(wrapInstrumentedTx(txAdapter));
+    await pending;
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await pending;
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback failure
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export function getDbConnectionStatus(): {
   isInitialized: boolean;
   engine: "pglite" | "postgres";
   reusedSingleton: boolean;
 } {
+  if (shouldUsePostgresPool()) {
+    return {
+      isInitialized: Boolean(globalThis.__hephzibahPgPool),
+      engine: "postgres",
+      reusedSingleton: true,
+    };
+  }
   return {
     isInitialized: Boolean(globalThis.__hephzibahPgPromise),
     engine: "pglite",
@@ -335,6 +428,11 @@ export function getDbConnectionStatus(): {
 }
 
 export async function withServiceRole<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+  if (shouldUsePostgresPool()) {
+    return runWithPoolTx(async (client) => {
+      await client.query("set local role service_role");
+    }, fn);
+  }
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role service_role");
@@ -343,6 +441,11 @@ export async function withServiceRole<T>(fn: (tx: DbTx) => Promise<T>): Promise<
 }
 
 export async function withAnonRole<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+  if (shouldUsePostgresPool()) {
+    return runWithPoolTx(async (client) => {
+      await client.query("set local role anon");
+    }, fn);
+  }
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role anon");
@@ -355,16 +458,29 @@ export async function withAdminRole<T>(
   aal: "aal1" | "aal2",
   fn: (tx: DbTx) => Promise<T>
 ): Promise<T> {
+  const jwtClaims = JSON.stringify({ sub: adminId, aal, role: "authenticated" });
+  if (shouldUsePostgresPool()) {
+    return runWithPoolTx(async (client) => {
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claim.sub', $1, true)", [adminId]);
+      await client.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
+      await client.query("select set_config('request.jwt.claims', $1, true)", [jwtClaims]);
+    }, fn);
+  }
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role authenticated");
     await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [adminId]);
     await tx.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
+    await tx.query("select set_config('request.jwt.claims', $1, true)", [jwtClaims]);
     return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }
 
 export async function withDbSuperuser<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+  if (shouldUsePostgresPool()) {
+    return runWithPoolTx(async () => {}, fn);
+  }
   const db = await getDb();
   return db.transaction(async (tx) => {
     return fn(wrapInstrumentedTx(tx as unknown as DbTx));

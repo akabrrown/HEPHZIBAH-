@@ -102,7 +102,7 @@ export function SiteHeader({
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden min-h-[44px] items-center gap-1.5 rounded-[2px] border-2 border-[var(--cyan)]/40 px-3.5 text-sm font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] hover:shadow-[0_0_15px_rgba(0,229,255,0.2)] transition-all sm:inline-flex"
+            className="hidden min-h-[44px] items-center gap-1.5 rounded-[2px] border border-[var(--control-border)] px-3.5 text-sm font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] transition-colors sm:inline-flex"
           >
             <MessageCircle className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
             <span>WhatsApp</span>
@@ -112,7 +112,7 @@ export function SiteHeader({
             <ButtonLink
               href="/book"
               variant={pathname === "/" || pathname === "/contact" ? "secondary" : "cyan"}
-              className="px-3 py-1.5 text-xs sm:px-5 sm:py-2.5 sm:text-sm shadow-[0_0_15px_rgba(0,229,255,0.2)]"
+              className="px-3 py-1.5 text-xs sm:px-5 sm:py-2.5 sm:text-sm"
               aria-label="Request a booking"
             >
               <span className="sm:hidden">Book</span>
@@ -228,7 +228,7 @@ export function SiteHeader({
                       <span>WhatsApp Studio Desk</span>
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/80">
-                      <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
+                      <span className="h-2 w-2 rounded-full bg-emerald-700" />
                       ONLINE
                     </span>
                   </a>

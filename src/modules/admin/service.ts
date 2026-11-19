@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 import {
   generateTotpCode,
   hashPassword,
@@ -254,18 +255,19 @@ function generateBase32Secret(): string {
   return out;
 }
 
-export async function listTeamAdmins(admin: AdminSessionPayload): Promise<AdminUserRecord[]> {
-  const admins = await withAdminRole(admin.adminId, admin.aal, (tx) => findAllTeamAdmins(tx));
-  const emails = await withServiceRole(async (svcTx) => {
-    const res = await svcTx.query<{ id: string; email: string }>(
-      `select id, email from auth.users`
-    );
-    return new Map(res.rows.map((r) => [r.id, r.email]));
+function getSupabaseAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey || !process.env.DATABASE_URL || process.env.NODE_ENV === "test") {
+    return null;
+  }
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
-  return admins.map((u) => ({
-    ...u,
-    email: emails.get(u.id) ?? u.email,
-  }));
+}
+
+export async function listTeamAdmins(admin: AdminSessionPayload): Promise<AdminUserRecord[]> {
+  return withAdminRole(admin.adminId, admin.aal, (tx) => findAllTeamAdmins(tx));
 }
 
 export async function createTeamAdmin(
@@ -288,28 +290,52 @@ export async function createTeamAdmin(
     );
   }
 
+  const normalizedEmail = v.email.toLowerCase();
   const passwordHash = hashPassword(v.password);
   const totpSecret = generateBase32Secret();
-  const userId = crypto.randomUUID();
 
   await withServiceRole(async (svcTx) => {
-    const existing = await findAuthAdminByEmail(svcTx, v.email);
+    const existing = await findAuthAdminByEmail(svcTx, normalizedEmail);
     if (existing) {
       throw new ProblemError(409, "email_exists", "Admin email already exists", "Use a distinct email per team member.");
     }
-    await svcTx.query(
-      `insert into auth.users (id, email, password_hash, totp_secret) values ($1::uuid, $2, $3, $4)`,
-      [userId, v.email.toLowerCase(), passwordHash, totpSecret]
-    );
   });
+
+  const supabaseAdmin = getSupabaseAdminClient();
+  let userId: string = crypto.randomUUID();
+  let createdInSupabase = false;
+
+  if (supabaseAdmin) {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password: v.password,
+      email_confirm: true,
+      user_metadata: { display_name: v.display_name },
+    });
+    if (error || !data.user) {
+      if (error?.message?.toLowerCase().includes("already")) {
+        throw new ProblemError(409, "email_exists", "Admin email already exists", "Use a distinct email per team member.");
+      }
+      throw new ProblemError(500, "auth_create_failed", "Unable to create auth account", error?.message ?? "Supabase Auth error.");
+    }
+    userId = data.user.id;
+    createdInSupabase = true;
+  } else {
+    await withServiceRole(async (svcTx) => {
+      await svcTx.query(
+        `insert into auth.users (id, email, password_hash, totp_secret) values ($1::uuid, $2, $3, $4)`,
+        [userId, normalizedEmail, passwordHash, totpSecret]
+      );
+    });
+  }
 
   try {
     const created = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
       const res = await tx.query<AdminUserRecord>(
-        `insert into admin_users (id, display_name, scopes, is_active)
-         values ($1::uuid, $2, $3, true)
-         returning id, $4::text as email, display_name, scopes, is_active, created_at::text as created_at`,
-        [userId, v.display_name, v.scopes, v.email.toLowerCase()]
+        `insert into admin_users (id, email, password_hash, totp_secret, display_name, scopes, is_active)
+         values ($1::uuid, $2, $3, $4, $5, $6, true)
+         returning id, email, display_name, scopes, is_active, created_at::text as created_at`,
+        [userId, normalizedEmail, passwordHash, totpSecret, v.display_name, v.scopes]
       );
       return res.rows[0]!;
     });
@@ -320,9 +346,13 @@ export async function createTeamAdmin(
       sampleCode: generateTotpCode(totpSecret),
     };
   } catch (err) {
-    await withServiceRole(async (svcTx) => {
-      await svcTx.query(`delete from auth.users where id = $1::uuid`, [userId]);
-    }).catch(() => undefined);
+    if (supabaseAdmin && createdInSupabase) {
+      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => undefined);
+    } else {
+      await withServiceRole(async (svcTx) => {
+        await svcTx.query(`delete from auth.users where id = $1::uuid`, [userId]);
+      }).catch(() => undefined);
+    }
     throw err;
   }
 }
@@ -379,7 +409,7 @@ export async function updateTeamAdmin(
   if (v.reset_totp) {
     newTotpSecret = generateBase32Secret();
     await withServiceRole(async (svcTx) => {
-      await svcTx.query(`update auth.users set totp_secret = $2 where id = $1::uuid`, [
+      await svcTx.query(`update admin_users set totp_secret = $2 where id = $1::uuid`, [
         updated.id,
         newTotpSecret,
       ]);

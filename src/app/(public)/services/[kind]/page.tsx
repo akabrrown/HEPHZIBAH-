@@ -207,18 +207,18 @@ export default async function ServiceDetailPage({
               href={`/book?kind=${kind}`}
               className="text-sm font-semibold text-[var(--cyan)] underline underline-offset-4 hover:brightness-110"
             >
-              Need a custom brief? Request a bespoke quote
+              Need a custom brief? Request a custom quote
             </Link>
           </div>
 
           {packages.length === 0 ? (
             <div className="mt-8 border border-[var(--hairline)] bg-[var(--black)] p-6">
               <p className="text-base font-medium text-[var(--white)]">
-                {copy.title} pricing is prepared by bespoke quote. Tell us your scope and we will send an itemised breakdown within one working day.
+                {copy.title} pricing is prepared by custom quote. Tell us your scope and we will send an itemised breakdown within one working day.
               </p>
               <div className="mt-4">
                 <ButtonLink href={`/book?kind=${kind}`} variant="cyan">
-                  Request a bespoke quote
+                  Request a custom quote
                 </ButtonLink>
               </div>
             </div>

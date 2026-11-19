@@ -837,7 +837,7 @@ export function BookingDetailClient({
           </section>
 
           {/* Client Gallery & Deliverables Delivery Card */}
-          <section className="border-2 border-[var(--cyan)]/60 bg-[var(--ink-2)] p-5 space-y-5 shadow-[0_0_25px_rgba(0,229,255,0.1)]">
+          <section className="border-2 border-[var(--cyan)]/60 bg-[var(--ink-2)] p-5 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
               <div className="flex items-center gap-2">
                 <Download className="h-5 w-5 text-[var(--cyan)]" />

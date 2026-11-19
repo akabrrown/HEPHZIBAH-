@@ -4,7 +4,7 @@ import type { Occasion, PackageItem, Service, ServiceKind, SiteSettings } from "
 export async function findActiveOccasions(tx: DbTx, kind?: ServiceKind): Promise<Occasion[]> {
   if (kind) {
     const res = await tx.query<Occasion>(
-      `select id, slug, name, applies_to, sort_order, is_active
+      `select id, slug, name, applies_to::text[] as applies_to, sort_order, is_active
          from occasions
         where is_active and $1::service_kind = any(applies_to)
         order by sort_order asc, name asc`,
@@ -13,7 +13,7 @@ export async function findActiveOccasions(tx: DbTx, kind?: ServiceKind): Promise
     return res.rows;
   }
   const res = await tx.query<Occasion>(
-    `select id, slug, name, applies_to, sort_order, is_active
+    `select id, slug, name, applies_to::text[] as applies_to, sort_order, is_active
        from occasions
       where is_active
       order by sort_order asc, name asc`

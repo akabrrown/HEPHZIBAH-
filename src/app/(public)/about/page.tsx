@@ -79,7 +79,7 @@ export default async function AboutPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <ButtonLink href="/book" variant="cyan" className="shadow-[0_0_15px_rgba(0,229,255,0.2)]">
+          <ButtonLink href="/book" variant="cyan">
             Request a booking
           </ButtonLink>
           <ButtonLink href="/contact" variant="secondary">

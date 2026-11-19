@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Check, CheckCircle2, Copy, Download, ExternalLink, KeyRound, MessageCircle, Sparkles } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Clock, Copy, Download, ExternalLink, KeyRound, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -240,13 +240,7 @@ export function ClientBookingStatusClient({
         <section className="lg:col-span-7 space-y-6">
           {/* DEDICATED GALLERY DOWNLOAD CARD */}
           {(booking.gallery_url || booking.status === "completed") && (
-            <div className="relative border-2 border-[var(--cyan)] bg-[var(--ink-2)] p-6 sm:p-8 space-y-6 shadow-[0_0_35px_rgba(0,229,255,0.22)]">
-              {/* Viewfinder Corner brackets */}
-              <span className="absolute -top-[2px] -left-[2px] h-3 w-3 border-t-2 border-l-2 border-[var(--cyan)]" />
-              <span className="absolute -top-[2px] -right-[2px] h-3 w-3 border-t-2 border-r-2 border-[var(--cyan)]" />
-              <span className="absolute -bottom-[2px] -left-[2px] h-3 w-3 border-b-2 border-l-2 border-[var(--cyan)]" />
-              <span className="absolute -bottom-[2px] -right-[2px] h-3 w-3 border-b-2 border-r-2 border-[var(--cyan)]" />
-
+            <div className="relative border-2 border-[var(--cyan)] bg-[var(--ink-2)] p-6 sm:p-8 space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] pb-4">
                 <span className="font-mono text-xs font-black uppercase tracking-widest text-[var(--cyan)]">
                   DELIVERABLES READY · SECURE CLIENT DOWNLOAD
@@ -258,10 +252,10 @@ export function ClientBookingStatusClient({
 
               <div>
                 <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-[var(--white)] tracking-tight">
-                  Your Studio Gallery & Deliverables
+                  Your Studio Gallery &amp; Deliverables
                 </h2>
                 <p className="mt-1 text-sm text-[var(--grey)] leading-relaxed">
-                  Curated high-resolution photographs, cinematic master exports, and print-ready deliverables from your session.
+                  Full-resolution edited photographs, master video exports, and print-ready files from your session.
                 </p>
               </div>
 
@@ -273,7 +267,7 @@ export function ClientBookingStatusClient({
                       href={booking.gallery_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex min-h-[50px] flex-1 items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-6 py-3 font-display text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] shadow-[0_0_25px_rgba(0,229,255,0.45)] hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer"
+                      className="inline-flex min-h-[50px] flex-1 items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-6 py-3 font-display text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] hover:brightness-110 active:scale-[0.98] transition-colors cursor-pointer"
                     >
                       <Download className="h-5 w-5 stroke-[2.5]" aria-hidden="true" />
                       <span>Download Studio Gallery</span>
@@ -350,13 +344,13 @@ export function ClientBookingStatusClient({
               ) : (
                 <div className="rounded-[2px] border border-[var(--hairline)] bg-[var(--black)] p-4 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-[var(--cyan)]" />
+                    <Clock className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
                     <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--white)]">
                       Post-Production In Progress
                     </span>
                   </div>
                   <p className="text-xs text-[var(--grey)] leading-relaxed">
-                    Our editing team is currently color grading and curating your deliverable files. Once finalized, your private cloud download link and access PIN will appear right here.
+                    Our editing team is finishing colour grading and preparing your final files. Once ready, your private download link and access PIN will appear right here.
                   </p>
                 </div>
               )}

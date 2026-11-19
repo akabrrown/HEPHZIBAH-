@@ -16,11 +16,15 @@ export async function findAuthAdminByEmail(
   email: string
 ): Promise<AuthAdminRow | null> {
   const res = await tx.query<AuthAdminRow>(
-    `select u.id, u.email, u.password_hash, u.totp_secret,
-            a.display_name, a.scopes, a.is_active
-       from auth.users u
-       join admin_users a on a.id = u.id
-      where lower(u.email) = lower($1)`,
+    `select id,
+            coalesce(email, '') as email,
+            coalesce(password_hash, '') as password_hash,
+            totp_secret,
+            display_name,
+            scopes,
+            is_active
+       from admin_users
+      where lower(coalesce(email, '')) = lower($1)`,
     [email.trim()]
   );
   return res.rows[0] ?? null;
@@ -31,11 +35,15 @@ export async function findAuthAdminById(
   adminId: string
 ): Promise<AuthAdminRow | null> {
   const res = await tx.query<AuthAdminRow>(
-    `select u.id, u.email, u.password_hash, u.totp_secret,
-            a.display_name, a.scopes, a.is_active
-       from auth.users u
-       join admin_users a on a.id = u.id
-      where u.id = $1::uuid`,
+    `select id,
+            coalesce(email, '') as email,
+            coalesce(password_hash, '') as password_hash,
+            totp_secret,
+            display_name,
+            scopes,
+            is_active
+       from admin_users
+      where id = $1::uuid`,
     [adminId]
   );
   return res.rows[0] ?? null;
@@ -43,10 +51,14 @@ export async function findAuthAdminById(
 
 export async function findAllTeamAdmins(tx: DbTx): Promise<AdminUserRecord[]> {
   const res = await tx.query<AdminUserRecord>(
-    `select a.id, coalesce(u.email, '') as email, a.display_name, a.scopes, a.is_active, a.created_at::text as created_at
-       from admin_users a
-       left join auth.users u on u.id = a.id
-      order by a.created_at asc`
+    `select id,
+            coalesce(email, '') as email,
+            display_name,
+            scopes,
+            is_active,
+            created_at::text as created_at
+       from admin_users
+      order by created_at asc`
   );
   return res.rows;
 }

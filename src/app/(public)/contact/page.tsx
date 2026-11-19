@@ -52,7 +52,7 @@ export default async function ContactPage() {
               variant="cyan"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full justify-center shadow-[0_0_15px_rgba(0,229,255,0.25)]"
+              className="w-full justify-center"
             >
               <MessageCircle className="h-4 w-4" aria-hidden="true" />
               <span>Chat on WhatsApp</span>

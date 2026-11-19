@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/button";
-import { PageHeading } from "@/components/ui/page-heading";
 import { PortfolioTile } from "@/components/ui/portfolio-tile";
 import { FramingCorners, ShotCaption } from "@/components/ui/viewfinder";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
@@ -76,118 +75,62 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Hero section: Cinematic Full-Landscape Viewfinder with Background Image */}
-      <section className="relative w-full min-h-[85vh] sm:min-h-[88vh] lg:min-h-[92vh] flex items-center overflow-hidden border-b border-[var(--hairline)] bg-[var(--black)] text-[var(--white)]">
-        {/* Full-bleed landscape background image layer */}
+      {/* Hero section: Compact full-bleed landscape background with studio team */}
+      <section className="relative w-full min-h-[420px] sm:min-h-[460px] lg:min-h-[500px] flex items-center overflow-hidden border-b border-[var(--hairline)] bg-[#0A0A0B] text-white">
         <div className="absolute inset-0 z-0 overflow-hidden">
           <picture>
             <source srcSet="/media/hephzibah-hero-bg.webp" type="image/webp" />
             <img
               src="/media/hephzibah-hero-bg.jpg"
-              alt="Hephzibah Media production crew with camera equipment on assignment in Accra, Ghana"
-              className="h-full w-full object-cover object-[center_22%] sm:object-[center_20%] md:object-[68%_center] lg:object-[65%_center] scale-100"
+              alt="Hephzibah Media production team holding camera and flash equipment in Accra, Ghana"
+              className="h-full w-full object-cover object-[76%_22%] sm:object-[78%_22%] lg:object-[82%_20%]"
               loading="eager"
               fetchPriority="high"
             />
           </picture>
 
-          {/* Cinematic dark gradients for pristine text readability while leaving subjects visible */}
-          <div className="absolute inset-0 bg-black/45" />
-
-          {/* Directional gradient: Heavy dark fade on left (desktop), vertical fade from bottom (mobile) */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[var(--black)] via-[var(--black)]/80 via-60% to-[var(--black)]/40 lg:bg-gradient-to-r lg:from-[var(--black)] lg:via-[var(--black)]/85 lg:via-52% lg:to-black/20" />
-
-          {/* Top and bottom subtle vignettes */}
-          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[var(--black)]/80 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[var(--black)] to-transparent" />
-
-          {/* Subtle camera sensor grid overlay */}
-          <div className="pointer-events-none absolute inset-0 opacity-[0.03] mix-blend-overlay bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:24px_24px]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0B]/95 via-[#0A0A0B]/70 to-[#0A0A0B]/30 md:bg-gradient-to-r md:from-[#0A0A0B]/95 md:via-[#0A0A0B]/70 md:via-48% md:to-transparent" />
         </div>
 
-        {/* Viewfinder corner brackets framing the entire hero viewport */}
-        <div className="pointer-events-none absolute left-4 top-4 sm:left-8 sm:top-8 h-6 w-6 border-l-2 border-t-2 border-[var(--cyan)] z-10" aria-hidden="true" />
-        <div className="pointer-events-none absolute right-4 top-4 sm:right-8 sm:top-8 h-6 w-6 border-r-2 border-t-2 border-[var(--cyan)] z-10" aria-hidden="true" />
-        <div className="pointer-events-none absolute left-4 bottom-4 sm:left-8 sm:bottom-8 h-6 w-6 border-l-2 border-b-2 border-[var(--cyan)] z-10" aria-hidden="true" />
-        <div className="pointer-events-none absolute right-4 bottom-4 sm:right-8 sm:bottom-8 h-6 w-6 border-r-2 border-b-2 border-[var(--cyan)] z-10" aria-hidden="true" />
-
-        {/* Hero Content Container */}
-        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
-          <div className="max-w-2xl lg:max-w-3xl space-y-6">
-            {/* Camera Shot Metadata Line & Live HUD Badge */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="inline-flex items-center gap-2.5 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/80 px-3 py-1.5 backdrop-blur-md text-xs font-mono uppercase tracking-widest text-[var(--cyan)]">
-                <span className="inline-block h-2 w-2 rounded-full bg-[var(--cyan)] shadow-[0_0_8px_var(--cyan)]" />
-                <span>HEPHZIBAH MEDIA // FIELD CREW // GHANA</span>
-              </div>
-
-              {/* REC telemetry badge */}
-              <div className="hidden sm:inline-flex items-center gap-2 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/80 px-3 py-1.5 backdrop-blur-md font-mono text-[11px] tracking-wider text-[var(--grey)]">
-                <span className="h-2 w-2 rounded-full bg-[var(--red)] animate-pulse" />
-                <span className="font-bold text-white">REC [●]</span>
-                <span className="text-[var(--cyan)] font-mono">PRIMARY RIG // 4K RAW</span>
-              </div>
-            </div>
-
-            {/* Main Headline & Ghost Title */}
-            <div className="space-y-3">
-              <PageHeading
-                title={settings.business_name}
-                ghostTitle="HEPHZIBAH"
-              />
-
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-[var(--white)] sm:text-5xl lg:text-6xl xl:text-6xl leading-[1.06]">
-                Photography, film and design for the moments that matter.
-              </h1>
-            </div>
-
-            <p className="max-w-xl text-base sm:text-lg leading-relaxed text-[var(--grey)] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-              From live national robotics championships and high-profile summits to sacred traditional marriages and brand identity design. We deliver disciplined Ghanaian visual craft with honest date locks and transparent Ghana Cedi quotes.
+        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
+          <div className="max-w-lg lg:max-w-xl space-y-4">
+            <p className="font-mono text-xs uppercase tracking-widest text-[#00E5FF] font-semibold">
+              {settings.business_name} &middot; Accra, Ghana
             </p>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            <h1 className="font-display text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl leading-[1.08]">
+              Photography, film and design for the moments that matter.
+            </h1>
+
+            <p className="max-w-md text-sm sm:text-base leading-relaxed text-[#D2D6DC]">
+              Weddings, corporate summits, portraits, and brand identity work produced by our Accra team. Itemised Ghana Cedi quotes, firm date locks, and reliable delivery.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
               <ButtonLink
                 href="/book"
                 variant="primary"
-                className="px-8 py-3.5 text-sm font-extrabold shadow-lg shadow-black/50"
+                className="px-6 py-3 text-sm font-bold"
               >
                 Request a booking
               </ButtonLink>
               <ButtonLink
                 href="/portfolio"
-                variant="secondary"
-                className="px-7 py-3.5 text-sm backdrop-blur-md bg-black/40 border-[var(--control-border)] hover:border-[var(--cyan)]"
+                variant="secondaryLight"
+                className="px-6 py-3 text-sm"
               >
                 See client work
               </ButtonLink>
             </div>
 
-            {/* Studio Instrument Readouts / Guarantees Bar */}
-            <div className="mt-8 grid grid-cols-3 gap-4 rounded-[2px] border border-[var(--hairline)] bg-[var(--black)]/75 p-4 sm:p-5 backdrop-blur-md text-left shadow-2xl">
-              <div>
-                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">01 / CREW</div>
-                <div className="mt-1 font-display text-sm font-bold text-white">Dedicated Team</div>
-                <div className="text-[11px] text-[var(--grey)]">Two-camera coverage</div>
-              </div>
-              <div>
-                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">02 / QUOTE</div>
-                <div className="mt-1 font-display text-sm font-bold text-white">48-Hr Lock</div>
-                <div className="text-[11px] text-[var(--grey)]">Fixed Cedi pricing</div>
-              </div>
-              <div>
-                <div className="font-mono text-xs font-semibold text-[var(--cyan)]">03 / ARCHIVE</div>
-                <div className="mt-1 font-display text-sm font-bold text-white">4K & RAW</div>
-                <div className="text-[11px] text-[var(--grey)]">Lifetime cloud backup</div>
-              </div>
+            <div className="pt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[#C5CAD1]">
+              <span>Two-camera lead crew</span>
+              <span aria-hidden="true">&middot;</span>
+              <span>Fixed GHS quotes</span>
+              <span aria-hidden="true">&middot;</span>
+              <span>Direct online gallery delivery</span>
             </div>
           </div>
-        </div>
-
-        {/* Viewfinder Bottom Status Line */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 hidden sm:flex items-center justify-between px-8 text-[11px] font-mono text-[var(--grey)]">
-          <span>OPTICS: 24-70mm f/2.8 &bull; 1/250s &bull; ISO 400</span>
-          <span className="text-[var(--cyan)]">LOCATION: ACCRA, GHANA &bull; ACTIVE STUDIO</span>
         </div>
       </section>
 

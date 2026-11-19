@@ -19,7 +19,7 @@ export function PortfolioTile({ item }: { item: PortfolioItem }) {
         : null;
 
   return (
-    <FramingCorners className="group bg-[var(--ink-2)] border border-[var(--hairline)] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1 hover:border-[var(--cyan)]/50 hover:shadow-[0_12px_32px_rgba(0,0,0,0.6),0_0_20px_rgba(0,229,255,0.08)]">
+    <FramingCorners className="group bg-[var(--ink-2)] border border-[var(--hairline)] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[var(--cyan)]/50">
       <Link
         href={`/portfolio/${item.slug}`}
         className={`block p-3 focus-visible:outline-none ${item.kind === "videography" ? "vf-rec-tile" : ""}`}

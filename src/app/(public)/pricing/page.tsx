@@ -11,7 +11,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: "Packages and Pricing",
   description:
-    "Clear starting packages in Ghana Cedis (GHS) for photography, videography, and graphic design, plus bespoke quotes.",
+    "Clear starting packages in Ghana Cedis (GHS) for photography, videography, and graphic design, plus custom quotes.",
 };
 
 const KIND_TITLES: Record<ServiceKind, string> = {
@@ -35,13 +35,13 @@ export default async function PricingPage() {
 
       {packages.length === 0 ? (
         <div className="mt-10 border border-[var(--hairline)] bg-[var(--ink-2)] p-8 hm-card-interactive">
-          <h2 className="font-display text-xl font-bold text-[var(--white)]">Pricing by bespoke quote</h2>
+          <h2 className="font-display text-xl font-bold text-[var(--white)]">Pricing by custom quote</h2>
           <p className="mt-2 text-sm text-[var(--grey)]">
             Tell us about your event or design deadline and we will send an itemised quote within one working day.
           </p>
           <div className="mt-5">
             <ButtonLink href="/book" variant="cyan">
-              Request a bespoke quote
+              Request a custom quote
             </ButtonLink>
           </div>
         </div>
@@ -80,7 +80,7 @@ export default async function PricingPage() {
                           {pkg.name}
                         </h3>
 
-                        <p className="mt-3 font-classica text-3xl font-black text-[var(--cyan)] drop-shadow-[0_0_15px_rgba(0,229,255,0.25)]">
+                        <p className="mt-3 font-classica text-3xl font-black text-[var(--cyan)]">
                           {formatGhsFromMinor(pkg.price_minor, pkg.currency)}
                         </p>
 
@@ -106,7 +106,7 @@ export default async function PricingPage() {
                         <ButtonLink
                           href={`/book?kind=${kind}&service=${pkg.service_id}&package=${pkg.id}`}
                           variant="cyan"
-                          className="w-full justify-center shadow-[0_0_15px_rgba(0,229,255,0.2)]"
+                          className="w-full justify-center"
                         >
                           Book with this package
                         </ButtonLink>
@@ -142,14 +142,14 @@ export default async function PricingPage() {
 
           <div className="flex flex-col justify-between border border-[var(--hairline)] bg-[var(--ink-2)] p-6 hm-card-interactive">
             <div>
-              <h2 className="font-display text-xl font-bold text-[var(--white)] mb-3">Need something bespoke?</h2>
+              <h2 className="font-display text-xl font-bold text-[var(--white)] mb-3">Need a custom quote?</h2>
               <p className="text-sm leading-relaxed text-[var(--grey)]">
                 Choose &ldquo;Not sure yet&rdquo; in the booking form and describe your brief. We will send an itemised quote you can share with family or finance teams.
               </p>
             </div>
             <div className="mt-6">
               <ButtonLink href="/book" variant="secondary" className="w-full justify-center">
-                Request a bespoke quote
+                Request a custom quote
               </ButtonLink>
             </div>
           </div>

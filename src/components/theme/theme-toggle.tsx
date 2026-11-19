@@ -62,12 +62,8 @@ export function ThemeToggle({
       aria-checked={isLight}
       aria-label={isLight ? "Switch to dark studio theme" : "Switch to light gallery theme"}
       title={isLight ? "Switch to Dark Theme" : "Switch to Light Theme"}
-      className={`group relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-[2px] border border-[var(--control-border)] bg-[var(--ink-2)] px-3 py-2 text-xs font-mono font-bold tracking-wider text-[var(--white)] transition-all hover:border-[var(--cyan)] hover:text-[var(--cyan)] hover:shadow-[0_0_15px_rgba(0,229,255,0.2)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)] cursor-pointer ${className}`}
+      className={`group relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-[2px] border border-[var(--control-border)] bg-[var(--ink-2)] px-3 py-2 text-xs font-mono font-bold tracking-wider text-[var(--white)] transition-colors hover:border-[var(--cyan)] hover:text-[var(--cyan)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)] cursor-pointer ${className}`}
     >
-      {/* Viewfinder micro-bracket indicator */}
-      <span className="pointer-events-none absolute -top-0.5 -left-0.5 h-1.5 w-1.5 border-t border-l border-[var(--cyan)] opacity-0 transition-opacity group-hover:opacity-100" />
-      <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 border-b border-r border-[var(--cyan)] opacity-0 transition-opacity group-hover:opacity-100" />
-
       {isLight ? (
         <>
           <Moon className="h-4 w-4 shrink-0 text-[var(--cyan)] transition-transform group-hover:-rotate-12" aria-hidden="true" />

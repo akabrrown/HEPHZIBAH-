@@ -57,9 +57,9 @@ export default async function PortfolioPage({
           </span>
           <Link
             href={buildFilterHref(undefined, activeOccasion)}
-            className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
+            className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
               !activeKind
-                ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] shadow-[0_0_12px_rgba(0,229,255,0.25)] font-bold"
+                ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] font-bold"
                 : "border-[var(--control-border)] text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]"
             }`}
           >
@@ -69,9 +69,9 @@ export default async function PortfolioPage({
             <Link
               key={k}
               href={buildFilterHref(k, activeOccasion)}
-              className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3.5 text-sm font-medium capitalize transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
+              className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
                 activeKind === k
-                  ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] shadow-[0_0_12px_rgba(0,229,255,0.25)] font-bold"
+                  ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] font-bold"
                   : "border-[var(--control-border)] text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]"
               }`}
             >
@@ -86,9 +86,9 @@ export default async function PortfolioPage({
           </span>
           <Link
             href={buildFilterHref(activeKind, undefined)}
-            className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3 text-xs font-medium transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
+            className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
               !activeOccasion
-                ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] shadow-[0_0_10px_rgba(0,229,255,0.2)] font-bold"
+                ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] font-bold"
                 : "border-[var(--hairline)] text-[var(--grey)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]"
             }`}
           >
@@ -98,9 +98,9 @@ export default async function PortfolioPage({
             <Link
               key={occ.id}
               href={buildFilterHref(activeKind, occ.slug)}
-              className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3 text-xs font-medium transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
+              className={`inline-flex min-h-[44px] items-center rounded-[2px] border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
                 activeOccasion === occ.slug
-                  ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] shadow-[0_0_10px_rgba(0,229,255,0.2)] font-bold"
+                  ? "border-[var(--cyan)] bg-[var(--cyan)]/15 text-[var(--cyan)] font-bold"
                   : "border-[var(--hairline)] text-[var(--grey)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]"
               }`}
             >

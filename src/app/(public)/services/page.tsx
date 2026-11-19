@@ -122,7 +122,7 @@ export default async function ServicesHubPage() {
               <Link
                 key={occ.id}
                 href={`/book?kind=${primaryKind}&occasion=${occ.id}`}
-                className="group flex min-h-[56px] items-center justify-between border border-[var(--hairline)] bg-[var(--ink-2)] px-4 py-3 hover:border-[var(--cyan)] hover:shadow-[0_4px_20px_rgba(0,229,255,0.12)] hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                className="group flex min-h-[56px] items-center justify-between border border-[var(--hairline)] bg-[var(--ink-2)] px-4 py-3 hover:border-[var(--cyan)] transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
               >
                 <span className="font-medium text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">{occ.name}</span>
                 <span className="font-mono-meta text-xs uppercase text-[var(--grey)] group-hover:text-[var(--cyan)] transition-colors">
