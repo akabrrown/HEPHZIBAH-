@@ -286,7 +286,14 @@ export async function createTeamAdmin(
       422,
       "breached_password",
       "Choose a stronger password",
-      "That password appeared in a known public breach. Pick a unique password."
+      "That password appeared in a known public data breach. Pick a unique password or use Generate.",
+      {
+        fieldErrors: {
+          password: [
+            "This password appeared in a known public data breach. Choose a unique password or click Generate.",
+          ],
+        },
+      }
     );
   }
 
@@ -314,12 +321,38 @@ export async function createTeamAdmin(
     });
     if (error || !data.user) {
       if (error?.message?.toLowerCase().includes("already")) {
-        throw new ProblemError(409, "email_exists", "Admin email already exists", "Use a distinct email per team member.");
+        // User may exist in Supabase Auth after being removed from public.admin_users; re-link cleanly
+        const { data: listed } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+        const existingAuthUser = listed?.users?.find(
+          (u) => u.email?.toLowerCase() === normalizedEmail
+        );
+        if (existingAuthUser) {
+          await supabaseAdmin.auth.admin.updateUserById(existingAuthUser.id, {
+            password: v.password,
+            email_confirm: true,
+            user_metadata: { display_name: v.display_name },
+          });
+          userId = existingAuthUser.id;
+        } else {
+          throw new ProblemError(
+            409,
+            "email_exists",
+            "Admin email already exists",
+            "Use a distinct email per team member."
+          );
+        }
+      } else {
+        throw new ProblemError(
+          500,
+          "auth_create_failed",
+          "Unable to create auth account",
+          error?.message ?? "Supabase Auth error."
+        );
       }
-      throw new ProblemError(500, "auth_create_failed", "Unable to create auth account", error?.message ?? "Supabase Auth error.");
+    } else {
+      userId = data.user.id;
+      createdInSupabase = true;
     }
-    userId = data.user.id;
-    createdInSupabase = true;
   } else {
     await withServiceRole(async (svcTx) => {
       await svcTx.query(
@@ -363,7 +396,9 @@ export async function updateTeamAdmin(
 ): Promise<{ user: AdminUserRecord; newTotpSecret?: string }> {
   const parsed = adminTeamUpdateSchema.safeParse(rawInput);
   if (!parsed.success) {
-    throw new ProblemError(422, "validation_error", "Check team member update", "Invalid update payload.");
+    throw new ProblemError(422, "validation_error", "Check team member update", "Invalid update payload.", {
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
   }
   const v = parsed.data;
 

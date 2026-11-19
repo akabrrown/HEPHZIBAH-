@@ -28,15 +28,27 @@ export const adminVerifyTotpSchema = z.object({
 });
 
 export const adminTeamCreateSchema = z.object({
-  email: z.string().trim().email(),
-  display_name: z.string().trim().min(1).max(80),
-  password: z.string().min(8).max(128),
+  email: z.string().trim().email("Enter a valid email address."),
+  display_name: z
+    .string()
+    .trim()
+    .min(1, "Enter the staff member's full name.")
+    .max(80, "Full name must be 80 characters or fewer."),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(128, "Password must be 128 characters or fewer."),
   scopes: z.array(z.enum(adminScopeValues)).min(1, "Assign at least one scope."),
 });
 
 export const adminTeamUpdateSchema = z.object({
-  id: z.string().uuid(),
-  display_name: z.string().trim().min(1).max(80).optional(),
+  id: z.string().uuid("Invalid team member ID."),
+  display_name: z
+    .string()
+    .trim()
+    .min(1, "Full name cannot be empty.")
+    .max(80, "Full name must be 80 characters or fewer.")
+    .optional(),
   scopes: z.array(z.enum(adminScopeValues)).optional(),
   is_active: z.boolean().optional(),
   reset_totp: z.boolean().optional(),

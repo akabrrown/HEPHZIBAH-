@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { createFreshTestDb, setTestDbInstance } from "@/lib/db";
-import { DEFAULT_CONTENT_ADMIN_ID } from "@/lib/seed-data";
+import { DEFAULT_CONTENT_ADMIN_ID, DEFAULT_OWNER_ID } from "@/lib/seed-data";
+import { ProblemError } from "@/lib/errors";
+import {
+  createTeamAdmin,
+  listTeamAdmins,
+  updateTeamAdmin,
+} from "@/modules/admin/service";
 import {
   deleteAdminPackage,
   deleteAdminService,
@@ -155,5 +161,69 @@ describe("Admin CRUD & Delete operations", () => {
     await deleteAdminPortfolioItem(contentAdmin, item.id);
     const afterDel = await listAdminPortfolio(contentAdmin);
     expect(afterDel.some((p) => p.id === item.id)).toBe(false);
+  });
+
+  it("creates and updates team admins and returns fieldErrors on 422 validation failures", async () => {
+    const teamAdmin: AdminSessionPayload = {
+      adminId: DEFAULT_OWNER_ID,
+      email: "owner@hephzibahmedia.com",
+      displayName: "Kofi Mensah (Owner)",
+      scopes: ["bookings", "content", "settings", "team"],
+      aal: "aal2",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      jti: "test-jti-team",
+    };
+
+    // 1. Create valid team admin
+    const created = await createTeamAdmin(teamAdmin, {
+      email: "newstaff@hephzibahmedia.com",
+      display_name: "Abena Mensah",
+      password: "UniqueStudio#2026!Accra",
+      scopes: ["bookings"],
+    });
+    expect(created.user.email).toBe("newstaff@hephzibahmedia.com");
+    expect(created.totpSecret.length).toBeGreaterThan(10);
+    expect(created.sampleCode).toMatch(/^\d{6}$/);
+
+    const members = await listTeamAdmins(teamAdmin);
+    expect(members.some((m) => m.id === created.user.id)).toBe(true);
+
+    // 2. Update scopes & rotate TOTP
+    const updated = await updateTeamAdmin(teamAdmin, {
+      id: created.user.id,
+      scopes: ["bookings", "content"],
+      reset_totp: true,
+    });
+    expect(updated.user.scopes).toEqual(["bookings", "content"]);
+    expect(updated.newTotpSecret).toBeDefined();
+
+    // 3. Verify 422 validation errors include actionable fieldErrors on both create and update
+    let createErr: unknown;
+    try {
+      await createTeamAdmin(teamAdmin, {
+        email: "not-an-email",
+        display_name: "",
+        password: "short",
+        scopes: [],
+      });
+    } catch (e) {
+      createErr = e;
+    }
+    expect(createErr).toBeInstanceOf(ProblemError);
+    expect((createErr as ProblemError).status).toBe(422);
+    expect((createErr as ProblemError).fieldErrors?.email).toBeDefined();
+    expect((createErr as ProblemError).fieldErrors?.password).toBeDefined();
+
+    let updateErr: unknown;
+    try {
+      await updateTeamAdmin(teamAdmin, {
+        id: "not-a-uuid",
+      });
+    } catch (e) {
+      updateErr = e;
+    }
+    expect(updateErr).toBeInstanceOf(ProblemError);
+    expect((updateErr as ProblemError).status).toBe(422);
+    expect((updateErr as ProblemError).fieldErrors?.id).toBeDefined();
   });
 });

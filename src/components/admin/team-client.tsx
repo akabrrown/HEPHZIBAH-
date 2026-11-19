@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, ShieldAlert, UserPlus } from "lucide-react";
+import { Eye, EyeOff, KeyRound, RefreshCw, ShieldAlert, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -13,27 +13,52 @@ import {
   type AdminUserRecord,
 } from "@/modules/admin/schema";
 
-function readErrorMessage(data: unknown, fallback: string): string {
+function generateStrongPassword(length = 16): string {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const symbols = "!@#$%&*-_";
+  const all = upper + lower + digits + symbols;
+  const randomBytes = new Uint32Array(length);
+  crypto.getRandomValues(randomBytes);
+  const chars = [
+    upper[randomBytes[0]! % upper.length]!,
+    lower[randomBytes[1]! % lower.length]!,
+    digits[randomBytes[2]! % digits.length]!,
+    symbols[randomBytes[3]! % symbols.length]!,
+  ];
+  for (let i = 4; i < length; i++) {
+    chars.push(all[randomBytes[i]! % all.length]!);
+  }
+  return chars.join("");
+}
+
+function parseProblemResponse(
+  data: unknown,
+  fallback: string
+): { message: string; fieldErrors: Record<string, string[]> } {
   if (data && typeof data === "object") {
     const obj = data as {
       detail?: string;
       title?: string;
       fieldErrors?: Record<string, string[]>;
     };
-    if (obj.fieldErrors && typeof obj.fieldErrors === "object") {
+    const fieldErrors =
+      obj.fieldErrors && typeof obj.fieldErrors === "object" ? obj.fieldErrors : {};
+    if (Object.keys(fieldErrors).length > 0) {
       const messages: string[] = [];
-      for (const [field, errs] of Object.entries(obj.fieldErrors)) {
+      for (const [field, errs] of Object.entries(fieldErrors)) {
         if (Array.isArray(errs) && errs.length > 0) {
           messages.push(`${field}: ${errs.join(", ")}`);
         }
       }
       if (messages.length > 0) {
-        return messages.join(" | ");
+        return { message: obj.detail ?? messages.join(" | "), fieldErrors };
       }
     }
-    return obj.detail ?? obj.title ?? fallback;
+    return { message: obj.detail ?? obj.title ?? fallback, fieldErrors };
   }
-  return fallback;
+  return { message: fallback, fieldErrors: {} };
 }
 
 export function TeamClient({
@@ -48,10 +73,13 @@ export function TeamClient({
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [scopes, setScopes] = useState<AdminScopeValue[]>(["bookings"]);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [revealedTotp, setRevealedTotp] = useState<{
     email: string;
     secret: string;
@@ -62,12 +90,15 @@ export function TeamClient({
     setScopes((prev) =>
       prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
     );
+    setFieldErrors((prev) => ({ ...prev, scopes: [] }));
   }
 
   async function handleCreateAdmin(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     setBanner(null);
+    setFormError(null);
+    setFieldErrors({});
     setRevealedTotp(null);
     try {
       const res = await fetch("/api/admin/team", {
@@ -80,9 +111,12 @@ export function TeamClient({
           scopes,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setBanner({ kind: "err", text: readErrorMessage(data, "Could not add admin account.") });
+        const parsed = parseProblemResponse(data, "Could not add admin account.");
+        setFieldErrors(parsed.fieldErrors);
+        setFormError(parsed.message);
+        setBanner({ kind: "err", text: parsed.message });
         return;
       }
       const created = data as {
@@ -99,6 +133,7 @@ export function TeamClient({
       setEmail("");
       setDisplayName("");
       setPassword("");
+      setShowPassword(false);
       setScopes(["bookings"]);
       router.refresh();
       setBanner({
@@ -106,7 +141,9 @@ export function TeamClient({
         text: `Created admin account for ${created.user.display_name}. Save the authenticator secret below now.`,
       });
     } catch {
-      setBanner({ kind: "err", text: "Network error adding team member." });
+      const msg = "Network error adding team member.";
+      setFormError(msg);
+      setBanner({ kind: "err", text: msg });
     } finally {
       setCreating(false);
     }
@@ -124,9 +161,10 @@ export function TeamClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: target.id, ...updates }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setBanner({ kind: "err", text: readErrorMessage(data, "Could not update team member.") });
+        const parsed = parseProblemResponse(data, "Could not update team member.");
+        setBanner({ kind: "err", text: parsed.message });
         return;
       }
       const result = data as { user: AdminUserRecord; newTotpSecret?: string };
@@ -276,26 +314,46 @@ export function TeamClient({
             <h2 className="font-display text-lg font-bold">Add admin staff member</h2>
           </div>
 
-          <FormField label="Full name" id="team-name" required>
+          <FormField
+            label="Full name"
+            id="team-name"
+            required
+            error={fieldErrors.display_name?.[0]}
+          >
             <input
               id="team-name"
               type="text"
               required
               className={INPUT_CLASSES}
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                if (fieldErrors.display_name?.length) {
+                  setFieldErrors((prev) => ({ ...prev, display_name: [] }));
+                }
+              }}
               placeholder="Abena Mensah"
             />
           </FormField>
 
-          <FormField label="Work email" id="team-email" required>
+          <FormField
+            label="Work email"
+            id="team-email"
+            required
+            error={fieldErrors.email?.[0]}
+          >
             <input
               id="team-email"
               type="email"
               required
               className={INPUT_CLASSES}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (fieldErrors.email?.length) {
+                  setFieldErrors((prev) => ({ ...prev, email: [] }));
+                }
+              }}
               placeholder="abena@hephzibahmedia.com"
             />
           </FormField>
@@ -304,18 +362,54 @@ export function TeamClient({
             label="Initial password"
             id="team-pass"
             required
-            helpText="Minimum 8 characters; checked against breached password lists."
+            error={fieldErrors.password?.[0]}
+            helpText="Minimum 8 characters; must not appear in known data breaches."
           >
-            <input
-              id="team-pass"
-              type="password"
-              required
-              minLength={8}
-              maxLength={128}
-              className={INPUT_CLASSES}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="space-y-2">
+              <div className="relative flex items-center gap-2">
+                <input
+                  id="team-pass"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  className={`${INPUT_CLASSES} pr-11`}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (fieldErrors.password?.length) {
+                      setFieldErrors((prev) => ({ ...prev, password: [] }));
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-2 inline-flex h-9 w-9 items-center justify-center text-[var(--grey)] hover:text-[var(--white)] cursor-pointer"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = generateStrongPassword();
+                  setPassword(next);
+                  setShowPassword(true);
+                  setFormError(null);
+                  setFieldErrors((prev) => ({ ...prev, password: [] }));
+                }}
+                className="inline-flex items-center gap-1.5 font-mono-meta text-xs font-semibold text-[var(--cyan)] hover:underline cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Generate strong password</span>
+              </button>
+            </div>
           </FormField>
 
           <div className="space-y-2">
@@ -336,12 +430,26 @@ export function TeamClient({
                 </label>
               ))}
             </div>
+            {fieldErrors.scopes?.[0] && (
+              <p role="alert" className="text-xs font-medium text-[var(--red)]">
+                {fieldErrors.scopes[0]}
+              </p>
+            )}
           </div>
 
           <div className="flex items-start gap-2 text-xs text-[var(--grey)]">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--grey)]" aria-hidden="true" />
             <span>TOTP MFA enrollment secret is generated on creation and shown once.</span>
           </div>
+
+          {formError && (
+            <div
+              role="alert"
+              className="border border-[var(--red)] bg-[var(--black)] p-3 text-xs font-medium text-[var(--red)]"
+            >
+              {formError}
+            </div>
+          )}
 
           <Button type="submit" variant="primary" disabled={creating || scopes.length === 0}>
             {creating ? "Creating admin..." : "Create team admin"}
