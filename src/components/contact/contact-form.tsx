@@ -2,11 +2,26 @@
 
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FormField, INPUT_CLASSES, TEXTAREA_CLASSES } from "@/components/ui/form-field";
+import { OfflineBanner } from "@/components/ui/offline-banner";
+import { buildWhatsAppUrl, normalizeGhanaPhone } from "@/lib/dates";
 
-export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string }) {
+function makeEnquiryKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `enq-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function ContactEnquiryForm({
+  privacyVersion,
+  whatsappE164,
+}: {
+  privacyVersion: string;
+  whatsappE164?: string;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -18,12 +33,16 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const idempotencyKeyRef = useRef<string>(makeEnquiryKey());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (name.trim().length < 2) errs.name = "Enter your name.";
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) errs.email = "Enter a valid email.";
+    if (phone.trim() && !normalizeGhanaPhone(phone.trim())) {
+      errs.phone = "Enter a valid Ghana or international phone number (e.g. 024 123 4567).";
+    }
     if (message.trim().length < 10) errs.message = "Message must be at least 10 characters.";
     if (message.trim().length > 3000) errs.message = "Message must stay under 3000 characters.";
     if (!consentAccepted) errs.consentAccepted = "Please tick the consent box before sending.";
@@ -40,7 +59,10 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
     try {
       const res = await fetch("/api/enquiries", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKeyRef.current,
+        },
         body: JSON.stringify({
           name: name.trim(),
           email: email.trim(),
@@ -73,12 +95,20 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
       setPhone("");
       setMessage("");
       setConsentAccepted(false);
+      idempotencyKeyRef.current = makeEnquiryKey();
     } catch {
       setFormError("Network error while sending. Reach us on WhatsApp instead.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  const fallbackWhatsApp = whatsappE164
+    ? buildWhatsAppUrl(
+        whatsappE164,
+        `Hello Hephzibah Media, ${name ? `I am ${name}. ` : ""}${message.slice(0, 200)}`
+      )
+    : null;
 
   if (submitted) {
     return (
@@ -99,10 +129,22 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5 border border-[var(--hairline)] bg-[var(--ink-2)] p-6">
+      <OfflineBanner />
+
       {formError && (
-        <div role="alert" className="border border-[var(--red)] bg-[var(--black)] p-3 text-sm text-[var(--red)] flex items-center gap-2">
+        <div role="alert" className="border border-[var(--red)] bg-[var(--black)] p-3 text-sm text-[var(--red)] flex flex-wrap items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{formError}</span>
+          {fallbackWhatsApp && (
+            <a
+              href={fallbackWhatsApp}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-[var(--cyan)] underline underline-offset-4"
+            >
+              Chat on WhatsApp
+            </a>
+          )}
         </div>
       )}
 
@@ -123,6 +165,8 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
           id="enquiry-name"
           type="text"
           maxLength={120}
+          aria-invalid={Boolean(fieldErrors.name) || undefined}
+          aria-describedby={fieldErrors.name ? "enquiry-name-error" : undefined}
           className={INPUT_CLASSES}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -134,6 +178,8 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
           <input
             id="enquiry-email"
             type="email"
+            aria-invalid={Boolean(fieldErrors.email) || undefined}
+            aria-describedby={fieldErrors.email ? "enquiry-email-error" : undefined}
             className={INPUT_CLASSES}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -144,6 +190,8 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
           <input
             id="enquiry-phone"
             type="tel"
+            aria-invalid={Boolean(fieldErrors.phone) || undefined}
+            aria-describedby={fieldErrors.phone ? "enquiry-phone-error" : undefined}
             className={INPUT_CLASSES}
             placeholder="024 000 0000"
             value={phone}
@@ -163,6 +211,8 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
           id="enquiry-message"
           rows={5}
           maxLength={3000}
+          aria-invalid={Boolean(fieldErrors.message) || undefined}
+          aria-describedby={fieldErrors.message ? "enquiry-message-error" : "enquiry-message-help"}
           className={TEXTAREA_CLASSES}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -175,6 +225,8 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
             id="enquiry-consent"
             type="checkbox"
             checked={consentAccepted}
+            aria-invalid={Boolean(fieldErrors.consentAccepted) || undefined}
+            aria-describedby={fieldErrors.consentAccepted ? "enquiry-consent-error" : undefined}
             onChange={(e) => setConsentAccepted(e.target.checked)}
             className="mt-1 h-5 w-5 shrink-0 accent-[var(--cyan)]"
           />
@@ -187,7 +239,7 @@ export function ContactEnquiryForm({ privacyVersion }: { privacyVersion: string 
           </span>
         </label>
         {fieldErrors.consentAccepted && (
-          <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--red)]">
+          <p id="enquiry-consent-error" role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--red)]">
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{fieldErrors.consentAccepted}</span>
           </p>

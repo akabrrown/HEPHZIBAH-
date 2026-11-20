@@ -25,16 +25,16 @@ export default function NotFoundPage() {
           </ButtonLink>
         </div>
         <div className="border-t border-[var(--hairline)] pt-4 text-xs text-[var(--grey)] flex flex-wrap gap-4">
-          <Link href="/portfolio?occasion=wedding" className="hover:text-[var(--cyan)]">
+          <Link href="/portfolio?occasion=wedding" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
             Weddings
           </Link>
-          <Link href="/portfolio?occasion=traditional-marriage" className="hover:text-[var(--cyan)]">
+          <Link href="/portfolio?occasion=traditional-marriage" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
             Traditional marriage
           </Link>
-          <Link href="/portfolio?occasion=corporate-event" className="hover:text-[var(--cyan)]">
+          <Link href="/portfolio?occasion=corporate-event" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
             Corporate events
           </Link>
-          <Link href="/services/design" className="hover:text-[var(--cyan)]">
+          <Link href="/services/design" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
             Graphic design
           </Link>
         </div>

@@ -1,16 +1,14 @@
 import { ContentManagerClient } from "@/components/admin/content-manager-client";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { ScopeDenied } from "@/components/admin/scope-denied";
-import { requireAdmin } from "@/lib/auth";
 import { listAdminServicesAndPackages } from "@/modules/catalog/service";
 import { listAdminContent } from "@/modules/portfolio/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminContentPage() {
-  let admin;
-  try {
-    admin = await requireAdmin("content");
-  } catch {
+  const admin = await resolveAdminPageSession("content");
+  if (!admin) {
     return <ScopeDenied requiredScope="content" />;
   }
 

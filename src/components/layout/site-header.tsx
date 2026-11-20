@@ -30,9 +30,13 @@ function isNavItemActive(pathname: string, href: string): boolean {
 export function SiteHeader({
   businessName,
   whatsappE164,
+  instagramUrl,
+  tiktokUrl,
 }: {
   businessName: string;
   whatsappE164: string;
+  instagramUrl?: string;
+  tiktokUrl?: string;
 }) {
   const pathname = usePathname() || "/";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,7 +106,7 @@ export function SiteHeader({
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden min-h-[44px] items-center gap-1.5 rounded-[2px] border border-[var(--control-border)] px-3.5 text-sm font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] transition-colors sm:inline-flex"
+            className="hidden min-h-[44px] items-center gap-1.5 rounded-[2px] border border-[var(--control-border)] px-3.5 text-sm font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] transition-colors sm:inline-flex"
           >
             <MessageCircle className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
             <span>WhatsApp</span>
@@ -133,7 +137,7 @@ export function SiteHeader({
         </div>
       </div>
 
-      {/* Activated Mobile Side Navigation Drawer (Rapperholic Angled Electric Cyan Architecture) */}
+      {/* Activated Mobile Side Navigation Drawer */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden" id="mobile-side-nav">
           {/* Backdrop Scrim with dark blur */}
@@ -143,7 +147,7 @@ export function SiteHeader({
             aria-hidden="true"
           />
 
-          {/* Rapperholic Angled Electric Cyan Drawer */}
+          {/* Angled Electric Cyan Navigation Drawer */}
           <aside
             role="dialog"
             aria-modal="true"
@@ -152,7 +156,12 @@ export function SiteHeader({
           >
             {/* Drawer Top Bar: Brand Logo, Studio Tag & High-Contrast Close Button */}
             <div className="flex items-center justify-between border-b-2 border-black/15 bg-black/10 px-5 py-4 pl-8">
-              <Link href="/" onClick={() => setMenuOpen(false)} aria-label={businessName}>
+              <Link
+                href="/"
+                onClick={() => setMenuOpen(false)}
+                aria-label={businessName}
+                className="inline-flex min-h-[44px] items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              >
                 <BrandLogo variant="light" size="sm" priority />
               </Link>
               <div className="flex items-center gap-2">
@@ -186,12 +195,12 @@ export function SiteHeader({
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         onClick={() => setMenuOpen(false)}
-                        className={`group flex items-center justify-between border-b border-black/15 py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black ${
+                        className={`group flex min-h-[44px] items-center justify-between border-b border-black/15 py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black ${
                           active ? "opacity-100" : "opacity-85 hover:opacity-100"
                         }`}
                       >
                         <div className="flex items-baseline gap-3">
-                          <span className="font-mono text-xs font-black tracking-widest text-black/60 group-hover:text-black">
+                          <span className="font-mono text-xs font-black tracking-widest text-black/80 group-hover:text-black">
                             {num}
                           </span>
                           <span className="font-archivo font-black text-2xl uppercase tracking-wider text-black transition-transform group-hover:translate-x-1.5">
@@ -203,7 +212,7 @@ export function SiteHeader({
                             ACTIVE
                           </span>
                         ) : (
-                          <span className="font-mono text-xs font-bold text-black/30 transition-transform group-hover:translate-x-1 group-hover:text-black">
+                          <span className="font-mono text-xs font-bold text-black/65 transition-transform group-hover:translate-x-1 group-hover:text-black">
                             &rarr;
                           </span>
                         )}
@@ -221,15 +230,14 @@ export function SiteHeader({
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setMenuOpen(false)}
-                    className="flex items-center justify-between rounded-[2px] border-2 border-black/30 bg-black/10 px-3.5 py-2.5 font-mono text-xs font-black uppercase tracking-wider text-black transition-all hover:border-black hover:bg-black/20"
+                    className="flex min-h-[44px] items-center justify-between rounded-[2px] border-2 border-black/30 bg-black/10 px-3.5 py-2.5 font-mono text-xs font-black uppercase tracking-wider text-black transition-all hover:border-black hover:bg-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   >
                     <span className="flex items-center gap-2">
                       <MessageCircle className="h-4 w-4" aria-hidden="true" />
                       <span>WhatsApp Studio Desk</span>
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/80">
-                      <span className="h-2 w-2 rounded-full bg-emerald-700" />
-                      ONLINE
+                      Mon&ndash;Sat &middot; Replies in 1 day
                     </span>
                   </a>
                 </li>
@@ -264,7 +272,7 @@ export function SiteHeader({
                 <span className="font-mono text-xs font-black tracking-widest text-black">
                   CONNECT
                 </span>
-                <SocialLinks />
+                <SocialLinks instagramUrl={instagramUrl} tiktokUrl={tiktokUrl} />
               </div>
 
               <div className="text-center font-mono text-[10px] font-bold tracking-widest text-black/80 uppercase pt-1">

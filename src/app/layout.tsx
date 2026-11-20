@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { Providers } from "@/components/providers";
+import { Archivo, Public_Sans } from "next/font/google";
 import "./globals.css";
 
-const archivo = {
-  variable: "font-archivo",
-};
+const archivo = Archivo({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-archivo",
+  display: "swap",
+});
 
-const publicSans = {
-  variable: "font-public-sans",
-};
+const publicSans = Public_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-public-sans",
+  display: "swap",
+});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
@@ -27,7 +33,7 @@ export const metadata: Metadata = {
     title: "Hephzibah Media — Photography, Videography & Graphic Design",
     description:
       "Photography, videography and graphic design across Ghana. View client work and send a booking request.",
-    images: ["/media/traditional-marriage-hero.svg"],
+    images: ["/media/hephzibah-hero-bg.jpg"],
   },
   icons: {
     icon: [
@@ -52,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="bg-[var(--black)] text-[var(--white)] antialiased selection:bg-[var(--cyan)] selection:text-[var(--black)]">
-        <Providers>{children}</Providers>
+        {children}
       </body>
     </html>
   );

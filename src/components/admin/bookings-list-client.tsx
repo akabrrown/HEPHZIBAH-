@@ -3,7 +3,7 @@
 import { Download, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { INPUT_CLASSES, SELECT_CLASSES } from "@/components/ui/form-field";
 import { formatDisplayDate } from "@/lib/dates";
@@ -24,17 +24,34 @@ const STATUS_BADGES: Record<string, { label: string; marker: string }> = {
 
 export function BookingsListClient({
   items,
+  initialNextCursor = null,
   initialFilters,
 }: {
   items: BookingRecord[];
+  initialNextCursor?: string | null;
   initialFilters: { status: string; kind: string; q: string; from: string; to: string };
 }) {
   const router = useRouter();
+  const [rows, setRows] = useState<BookingRecord[]>(items);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [status, setStatus] = useState(initialFilters.status);
   const [kind, setKind] = useState(initialFilters.kind);
   const [q, setQ] = useState(initialFilters.q);
   const [from, setFrom] = useState(initialFilters.from);
   const [to, setTo] = useState(initialFilters.to);
+
+  useEffect(() => {
+    setRows(items);
+    setNextCursor(initialNextCursor ?? null);
+    setStatus(initialFilters.status);
+    setKind(initialFilters.kind);
+    setQ(initialFilters.q);
+    setFrom(initialFilters.from);
+    setTo(initialFilters.to);
+  }, [items, initialNextCursor, initialFilters]);
 
   function buildQueryString() {
     const sp = new URLSearchParams();
@@ -51,6 +68,47 @@ export function BookingsListClient({
     const qs = buildQueryString();
     router.push(qs ? `/admin/bookings?${qs}` : "/admin/bookings");
   }
+
+  function clearFilters() {
+    setStatus("");
+    setKind("");
+    setQ("");
+    setFrom("");
+    setTo("");
+    router.push("/admin/bookings");
+  }
+
+  async function handleLoadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError(null);
+    try {
+      const qs = buildQueryString();
+      const url = `/api/admin/bookings?${qs ? `${qs}&` : ""}cursor=${encodeURIComponent(nextCursor)}`;
+      const res = await fetch(url);
+      const data = (await res.json().catch(() => null)) as {
+        items?: BookingRecord[];
+        nextCursor?: string | null;
+        detail?: string;
+      } | null;
+      if (!res.ok || !data) {
+        setLoadError(data?.detail ?? "Could not load more bookings.");
+        return;
+      }
+      setRows((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        const added = (data.items ?? []).filter((r) => !seen.has(r.id));
+        return [...prev, ...added];
+      });
+      setNextCursor(data.nextCursor ?? null);
+    } catch {
+      setLoadError("Network error while loading more bookings.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const hasActiveFilters = Boolean(status || kind || q.trim() || from || to);
 
   const csvQs = buildQueryString();
   const csvHref = csvQs ? `/api/admin/bookings?${csvQs}&format=csv` : "/api/admin/bookings?format=csv";
@@ -157,10 +215,21 @@ export function BookingsListClient({
           <Button type="submit" variant="primary" aria-label="Apply booking filters" className="px-4">
             <Search className="h-4 w-4" aria-hidden="true" />
           </Button>
+          {hasActiveFilters && (
+            <Button type="button" variant="secondary" onClick={clearFilters} className="px-3 text-xs">
+              Clear
+            </Button>
+          )}
         </div>
       </form>
 
-      {items.length === 0 ? (
+      {loadError && (
+        <div role="alert" className="border border-[var(--red)] bg-[var(--ink-2)] p-3 text-sm text-[var(--red)]">
+          {loadError}
+        </div>
+      )}
+
+      {rows.length === 0 ? (
         <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-8 text-center text-sm text-[var(--grey)]">
           No bookings match those filters.
         </div>
@@ -180,7 +249,7 @@ export function BookingsListClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--hairline)]">
-                {items.map((b) => {
+                {rows.map((b) => {
                   const badge = STATUS_BADGES[b.status] ?? { label: b.status, marker: "•" };
                   return (
                     <tr
@@ -216,7 +285,7 @@ export function BookingsListClient({
 
           {/* Mobile card collapse (360px ready) */}
           <div className="space-y-3 md:hidden">
-            {items.map((b) => {
+            {rows.map((b) => {
               const badge = STATUS_BADGES[b.status] ?? { label: b.status, marker: "•" };
               return (
                 <Link
@@ -240,6 +309,14 @@ export function BookingsListClient({
               );
             })}
           </div>
+
+          {nextCursor && (
+            <div className="flex justify-center pt-2">
+              <Button type="button" variant="secondary" disabled={loadingMore} onClick={handleLoadMore}>
+                {loadingMore ? "Loading more..." : "Load more bookings"}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

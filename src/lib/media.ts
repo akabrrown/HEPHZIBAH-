@@ -5,15 +5,35 @@ export function resolveImageUrl(
   if (!publicId) {
     return "/media/fallback-frame.svg";
   }
-  if (publicId.startsWith("/") || publicId.startsWith("http://") || publicId.startsWith("https://")) {
-    return publicId;
+  const trimmed = publicId.trim();
+  if (!trimmed) {
+    return "/media/fallback-frame.svg";
+  }
+  // Reject protocol-relative open redirects such as //attacker.com/...
+  if (trimmed.startsWith("//")) {
+    return "/media/fallback-frame.svg";
+  }
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  const widthTransform = options?.width ? `w_${options.width},c_limit,` : "";
+  if (trimmed.startsWith("https://") || trimmed.startsWith("http://")) {
+    const cloudinaryMatch = trimmed.match(
+      /^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/
+    );
+    if (cloudinaryMatch?.[1] && cloudinaryMatch[2]) {
+      const rest = cloudinaryMatch[2];
+      if (!rest.includes("f_auto")) {
+        return `${cloudinaryMatch[1]}f_auto,q_auto,${widthTransform}${rest}`;
+      }
+    }
+    return trimmed;
   }
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  if (cloudName && !publicId.startsWith("local/")) {
-    const widthTransform = options?.width ? `w_${options.width},c_limit,` : "";
-    return `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto,${widthTransform}${publicId}`;
+  if (cloudName && !trimmed.startsWith("local/")) {
+    return `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto,${widthTransform}${trimmed}`;
   }
-  const cleanId = publicId.replace(/^local\//, "");
+  const cleanId = trimmed.replace(/^local\//, "");
   return `/media/${cleanId}.svg`;
 }
 
@@ -45,7 +65,7 @@ export function parseVideoUrl(
   try {
     const url = new URL(inputUrl.trim());
     const host = url.hostname.toLowerCase();
-    if (host.includes("youtube.com")) {
+    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
       const v = url.searchParams.get("v");
       if (v && /^[a-zA-Z0-9_-]{6,20}$/.test(v)) {
         return { provider: "youtube", videoId: v };
@@ -61,7 +81,7 @@ export function parseVideoUrl(
         return { provider: "youtube", videoId: id };
       }
     }
-    if (host.includes("vimeo.com")) {
+    if (host === "vimeo.com" || host.endsWith(".vimeo.com")) {
       const match = url.pathname.match(/\/(\d{6,15})/);
       if (match?.[1]) {
         return { provider: "vimeo", videoId: match[1] };

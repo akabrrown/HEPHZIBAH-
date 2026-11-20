@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { BookingDetailClient } from "@/components/admin/booking-detail-client";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { ScopeDenied } from "@/components/admin/scope-denied";
-import { requireAdmin } from "@/lib/auth";
+import { ProblemError } from "@/lib/errors";
+import { isUuid } from "@/lib/http";
 import { getBookingDetailForAdmin } from "@/modules/booking/service";
 import { getPublicCatalogue, getPublicSiteSettings } from "@/modules/catalog/service";
 
@@ -12,20 +14,24 @@ export default async function AdminBookingDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  let admin;
-  try {
-    admin = await requireAdmin("bookings");
-  } catch {
+  const admin = await resolveAdminPageSession("bookings");
+  if (!admin) {
     return <ScopeDenied requiredScope="bookings" />;
   }
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    notFound();
+  }
 
   let detail;
   try {
     detail = await getBookingDetailForAdmin(admin, id);
-  } catch {
-    notFound();
+  } catch (err) {
+    if (err instanceof ProblemError && err.status === 404) {
+      notFound();
+    }
+    throw err;
   }
 
   const [catalogue, settings] = await Promise.all([

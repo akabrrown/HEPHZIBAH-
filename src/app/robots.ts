@@ -9,6 +9,18 @@ export default function robots(): MetadataRoute.Robots {
         allow: "/",
         disallow: ["/admin", "/admin/", "/api/", "/booking/status/"],
       },
+      {
+        userAgent: [
+          "GPTBot",
+          "Bytespider",
+          "CCBot",
+          "ClaudeBot",
+          "anthropic-ai",
+          "Google-Extended",
+          "Amazonbot",
+        ],
+        disallow: "/",
+      },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,
   };

@@ -1,16 +1,14 @@
 import { AdminCalendarClient } from "@/components/admin/calendar-client";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { ScopeDenied } from "@/components/admin/scope-denied";
-import { requireAdmin } from "@/lib/auth";
 import { addDaysIso, getAccraTodayIso } from "@/lib/dates";
 import { getCalendarAndBlockedDatesAdmin } from "@/modules/booking/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCalendarPage() {
-  let admin;
-  try {
-    admin = await requireAdmin("bookings");
-  } catch {
+  const admin = await resolveAdminPageSession("bookings");
+  if (!admin) {
     return <ScopeDenied requiredScope="bookings" />;
   }
 

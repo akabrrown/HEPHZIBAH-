@@ -237,6 +237,7 @@ export const galleryDeliverySchema = z.object({
     .string()
     .trim()
     .url("Enter a valid URL (Google Drive, Pixieset, Dropbox, WeTransfer, etc.)")
+    .regex(/^https?:\/\//i, "Gallery URL must start with http:// or https://.")
     .max(1000, "URL must stay under 1000 characters.")
     .nullable()
     .optional(),

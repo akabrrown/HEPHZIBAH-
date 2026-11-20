@@ -97,32 +97,38 @@ export default async function ServiceDetailPage({
         <div className="mt-8 grid gap-6 lg:grid-cols-12">
           <div className="space-y-4 lg:col-span-7">
             <h2 className="font-display text-xl font-bold">Sub-services</h2>
-            <div className="space-y-3">
-              {services.map((svc) => (
-                <div
-                  key={svc.id}
-                  className="flex flex-wrap items-center justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-                >
-                  <div className="max-w-lg">
-                    <h3 className="font-display text-lg font-bold text-[var(--white)]">
-                      {svc.name}
-                    </h3>
-                    <p className="mt-1 text-sm text-[var(--grey)]">{svc.summary}</p>
-                    {svc.starting_price_minor !== null && (
-                      <p className="mt-2 font-mono-meta text-xs text-[var(--cyan)]">
-                        Starting from {formatGhsFromMinor(svc.starting_price_minor)}
-                      </p>
-                    )}
-                  </div>
-                  <ButtonLink
-                    href={`/book?kind=${kind}&service=${svc.id}`}
-                    variant="secondary"
+            {services.length === 0 ? (
+              <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-6 text-sm text-[var(--grey)]">
+                No standard sub-services listed for {copy.title.toLowerCase()} yet. Start a custom request below and describe your brief.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {services.map((svc) => (
+                  <div
+                    key={svc.id}
+                    className="flex flex-wrap items-center justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
                   >
-                    Request this
-                  </ButtonLink>
-                </div>
-              ))}
-            </div>
+                    <div className="max-w-lg">
+                      <h3 className="font-display text-lg font-bold text-[var(--white)]">
+                        {svc.name}
+                      </h3>
+                      <p className="mt-1 text-sm text-[var(--grey)]">{svc.summary}</p>
+                      {svc.starting_price_minor !== null && (
+                        <p className="mt-2 font-mono-meta text-xs text-[var(--cyan)]">
+                          Starting from {formatGhsFromMinor(svc.starting_price_minor)}
+                        </p>
+                      )}
+                    </div>
+                    <ButtonLink
+                      href={`/book?kind=${kind}&service=${svc.id}`}
+                      variant="secondary"
+                    >
+                      Request this
+                    </ButtonLink>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-6 lg:col-span-5">
@@ -179,7 +185,7 @@ export default async function ServiceDetailPage({
                     <Link
                       key={occ.id}
                       href={`/book?kind=${kind}&occasion=${occ.id}`}
-                      className="inline-flex min-h-[38px] items-center border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)]"
+                      className="inline-flex min-h-[44px] items-center border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                     >
                       {occ.name}
                     </Link>
@@ -205,7 +211,7 @@ export default async function ServiceDetailPage({
             </div>
             <Link
               href={`/book?kind=${kind}`}
-              className="text-sm font-semibold text-[var(--cyan)] underline underline-offset-4 hover:brightness-110"
+              className="inline-flex min-h-[44px] items-center text-sm font-semibold text-[var(--cyan)] underline underline-offset-4 hover:brightness-110 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
             >
               Need a custom brief? Request a custom quote
             </Link>

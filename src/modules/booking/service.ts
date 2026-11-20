@@ -60,23 +60,28 @@ export const CLIENT_STATUS_HEADLINES: Record<BookingStatus, string> = {
   expired: "Your quote has expired",
 };
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoCalendarDate(value: string): boolean {
+  if (!ISO_DATE_RE.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export async function getPublicUnavailableDates(
   fromDate?: string,
   toDate?: string
 ): Promise<{ dates: string[]; minLeadDays: number; maxAdvanceDays: number }> {
   const today = getAccraTodayIso();
   const from = fromDate ?? today;
-  const to = toDate ?? addDaysIso(from, 400);
-
-  const cacheKey = `booking:unavailable:${from}:${to}`;
-  const cached = getCached<{ dates: string[]; minLeadDays: number; maxAdvanceDays: number }>(cacheKey);
-  if (cached) return cached;
-
-  const settings = await withAnonRole((tx) => findSiteSettings(tx));
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+  if (!isValidIsoCalendarDate(from)) {
     throw new ProblemError(422, "invalid_range", "Invalid date range", "Use YYYY-MM-DD dates.");
   }
+  const to = toDate ?? addDaysIso(from, 400);
+  if (!isValidIsoCalendarDate(to)) {
+    throw new ProblemError(422, "invalid_range", "Invalid date range", "Use YYYY-MM-DD dates.");
+  }
+
   const span = diffDaysIso(from, to);
   if (span < 0 || span > 400) {
     throw new ProblemError(
@@ -87,7 +92,14 @@ export async function getPublicUnavailableDates(
     );
   }
 
-  const dates = await withAnonRole((tx) => findUnavailableDatesInRange(tx, from, to));
+  const cacheKey = `booking:unavailable:${from}:${to}`;
+  const cached = getCached<{ dates: string[]; minLeadDays: number; maxAdvanceDays: number }>(cacheKey);
+  if (cached) return cached;
+
+  const [settings, dates] = await withAnonRole(async (tx) =>
+    Promise.all([findSiteSettings(tx), findUnavailableDatesInRange(tx, from, to)])
+  );
+
   const result = {
     dates,
     minLeadDays: settings.min_lead_days,
@@ -154,7 +166,7 @@ export async function submitBookingRequest(
       const ref = existing.rows[0].reference;
       return {
         reference: ref,
-        statusUrl: `/book/confirmation/${ref}`,
+        statusUrl: "",
         isReplay: true,
       };
     }
@@ -346,6 +358,21 @@ export interface ClientBookingStatusView {
   settings: Pick<SiteSettings, "business_name" | "whatsapp_e164" | "phone_e164" | "contact_email" | "social">;
 }
 
+export function verifyBookingAccessToken(
+  booking: { access_token_hash: string; updated_at: string },
+  rawToken: string
+): boolean {
+  const trimmed = rawToken.trim();
+  if (trimmed.length < 16 || booking.access_token_hash === "revoked") {
+    return false;
+  }
+  const updatedMs = new Date(booking.updated_at).getTime();
+  if (!Number.isNaN(updatedMs) && Date.now() - updatedMs > 90 * 24 * 60 * 60 * 1000) {
+    return false;
+  }
+  return safeCompare(hashAccessToken(trimmed), booking.access_token_hash);
+}
+
 export async function getClientBookingStatus(
   reference: string,
   rawToken: string
@@ -356,20 +383,7 @@ export async function getClientBookingStatus(
 
   return withServiceRole(async (tx) => {
     const booking = await findBookingByReference(tx, reference.trim());
-    if (!booking) return null;
-
-    if (booking.access_token_hash === "revoked") {
-      return null;
-    }
-
-    // Tokens expire 90 days after last booking update per Threat Model section 7
-    const updatedMs = new Date(booking.updated_at).getTime();
-    if (!Number.isNaN(updatedMs) && Date.now() - updatedMs > 90 * 24 * 60 * 60 * 1000) {
-      return null;
-    }
-
-    const tokenHash = hashAccessToken(rawToken);
-    if (!safeCompare(tokenHash, booking.access_token_hash)) {
+    if (!booking || !verifyBookingAccessToken(booking, rawToken)) {
       return null;
     }
 
@@ -443,11 +457,10 @@ export async function cancelBookingByClient(
     throw new ProblemError(422, "validation_error", "Invalid cancellation reason", "Keep reason under 500 characters.");
   }
   const reason = parsed.data.reason?.trim() || "Cancelled by client from status page.";
-  const tokenHash = hashAccessToken(rawToken);
 
   await withServiceRole(async (tx) => {
     const booking = await findBookingByReference(tx, reference.trim());
-    if (!booking || !safeCompare(tokenHash, booking.access_token_hash)) {
+    if (!booking || !verifyBookingAccessToken(booking, rawToken)) {
       throw new ProblemError(404, "not_found", "Booking not found", "Invalid or expired status link.");
     }
     if (!canTransitionBooking(booking.status, "cancelled") || booking.status === "cancelled") {
@@ -909,6 +922,15 @@ export async function saveBookingGalleryDelivery(
        values ($1::uuid, 'admin', $2::uuid, 'gallery_delivered', $3::booking_status, $4::booking_status, $5, true)`,
       [booking.id, admin.adminId, booking.status, updated.status, eventNote]
     );
+
+    if (updated.status === "completed") {
+      invalidateCache("booking");
+      try {
+        revalidatePath("/book");
+      } catch {
+        // Non-Next test contexts ignore cache revalidation
+      }
+    }
 
     return updated;
   });

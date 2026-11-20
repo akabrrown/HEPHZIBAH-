@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   FormField,
@@ -112,6 +112,11 @@ export function ContentManagerClient({
   const [faqSort, setFaqSort] = useState("0");
   const [faqPublished, setFaqPublished] = useState(true);
 
+  useEffect(() => {
+    if (pkgServiceId && services.some((s) => s.id === pkgServiceId)) return;
+    setPkgServiceId(services[0]?.id ?? "");
+  }, [services, pkgServiceId]);
+
   function loadService(s: Service) {
     setSrvId(s.id);
     setSrvKind(s.kind);
@@ -146,10 +151,19 @@ export function ContentManagerClient({
       const finalSlug = (srvSlug.trim() || slugify(srvName)).trim();
       if (!finalSlug) {
         setBanner({ kind: "err", text: "Please enter a service name to generate a valid slug." });
-        setSaving(false);
         return;
       }
-      const parsedPrice = srvStartingGhs.trim() ? Number(srvStartingGhs) : null;
+      const trimmedPrice = srvStartingGhs.trim();
+      let startingPriceMinor: number | null = null;
+      if (trimmedPrice !== "") {
+        const parsedPrice = Number(trimmedPrice);
+        if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+          setBanner({ kind: "err", text: "Starting price must be zero or a positive GHS amount." });
+          return;
+        }
+        startingPriceMinor = toMinorUnits(parsedPrice);
+      }
+
       const res = await fetch("/api/admin/services", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,20 +174,22 @@ export function ContentManagerClient({
           name: srvName.trim(),
           summary: srvSummary.trim(),
           description_md: srvDesc.trim() || null,
-          starting_price_minor: parsedPrice != null && Number.isFinite(parsedPrice) ? toMinorUnits(parsedPrice) : null,
+          starting_price_minor: startingPriceMinor,
           sort_order: Number(srvSort) || 0,
           is_active: srvActive,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not save service.") });
         return;
       }
       const listRes = await fetch("/api/admin/services", { cache: "no-store" });
       if (listRes.ok) {
-        const listData = (await listRes.json()) as { services: Service[] };
-        setServices(listData.services);
+        const listData = (await listRes.json().catch(() => null)) as { services?: Service[] } | null;
+        if (listData?.services) {
+          setServices(listData.services);
+        }
       }
       resetServiceForm();
       router.refresh();
@@ -194,13 +210,17 @@ export function ContentManagerClient({
       const res = await fetch(`/api/admin/services?id=${encodeURIComponent(service.id)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete service.") });
         return;
       }
       setServices((prev) => prev.filter((s) => s.id !== service.id));
+      if (pkgId && packages.some((p) => p.id === pkgId && p.service_id === service.id)) {
+        resetPackageForm();
+      }
       setPackages((prev) => prev.filter((p) => p.service_id !== service.id));
+      if (pkgServiceId === service.id) setPkgServiceId("");
       if (srvId === service.id) resetServiceForm();
       router.refresh();
       setBanner({ kind: "ok", text: `Service "${service.name}" deleted.` });
@@ -244,10 +264,23 @@ export function ContentManagerClient({
     try {
       if (!pkgServiceId) {
         setBanner({ kind: "err", text: "Please create and select a Service first before adding a package." });
-        setSaving(false);
         return;
       }
       const priceNum = Number(pkgPriceGhs);
+      if (!pkgPriceGhs.trim() || !Number.isFinite(priceNum) || priceNum < 0) {
+        setBanner({ kind: "err", text: "Package price must be zero or a positive GHS amount." });
+        return;
+      }
+      let durationHours: number | null = null;
+      if (pkgHours.trim()) {
+        const parsedHours = Number(pkgHours);
+        if (!Number.isFinite(parsedHours) || parsedHours <= 0 || parsedHours > 200) {
+          setBanner({ kind: "err", text: "Hours must be between 0.5 and 200." });
+          return;
+        }
+        durationHours = parsedHours;
+      }
+
       const res = await fetch("/api/admin/packages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,8 +289,8 @@ export function ContentManagerClient({
           service_id: pkgServiceId,
           name: pkgName.trim(),
           summary: pkgSummary.trim() || null,
-          price_minor: Number.isFinite(priceNum) ? toMinorUnits(priceNum) : -1,
-          duration_hours: pkgHours.trim() ? Number(pkgHours) : null,
+          price_minor: toMinorUnits(priceNum),
+          duration_hours: durationHours,
           deliverables: pkgDeliverables
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -267,15 +300,17 @@ export function ContentManagerClient({
           is_active: pkgActive,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not save package.") });
         return;
       }
       const listRes = await fetch("/api/admin/packages", { cache: "no-store" });
       if (listRes.ok) {
-        const listData = (await listRes.json()) as { packages: PackageItem[] };
-        setPackages(listData.packages);
+        const listData = (await listRes.json().catch(() => null)) as { packages?: PackageItem[] } | null;
+        if (listData?.packages) {
+          setPackages(listData.packages);
+        }
       }
       resetPackageForm();
       router.refresh();
@@ -296,7 +331,7 @@ export function ContentManagerClient({
       const res = await fetch(`/api/admin/packages?id=${encodeURIComponent(pkg.id)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete package.") });
         return;
@@ -339,7 +374,6 @@ export function ContentManagerClient({
     try {
       if (testQuote.trim().length < 20) {
         setBanner({ kind: "err", text: "Quote must be at least 20 characters long." });
-        setSaving(false);
         return;
       }
       const effectiveStatus: PublishStatus = testConsent ? testStatus : "draft";
@@ -356,15 +390,19 @@ export function ContentManagerClient({
           sort_order: Number(testSort) || 0,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not save testimonial.") });
         return;
       }
       const listRes = await fetch("/api/admin/testimonials", { cache: "no-store" });
       if (listRes.ok) {
-        const listData = (await listRes.json()) as { testimonials: Testimonial[] };
-        setTestimonials(listData.testimonials);
+        const listData = (await listRes.json().catch(() => null)) as {
+          testimonials?: Testimonial[];
+        } | null;
+        if (listData?.testimonials) {
+          setTestimonials(listData.testimonials);
+        }
       }
       resetTestimonialForm();
       router.refresh();
@@ -385,7 +423,7 @@ export function ContentManagerClient({
       const res = await fetch(`/api/admin/testimonials?id=${encodeURIComponent(testimonial.id)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete testimonial.") });
         return;
@@ -433,15 +471,17 @@ export function ContentManagerClient({
           is_published: faqPublished,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not save FAQ.") });
         return;
       }
       const listRes = await fetch("/api/admin/faqs", { cache: "no-store" });
       if (listRes.ok) {
-        const listData = (await listRes.json()) as { faqs: FaqItem[] };
-        setFaqs(listData.faqs);
+        const listData = (await listRes.json().catch(() => null)) as { faqs?: FaqItem[] } | null;
+        if (listData?.faqs) {
+          setFaqs(listData.faqs);
+        }
       }
       resetFaqForm();
       router.refresh();
@@ -462,7 +502,7 @@ export function ContentManagerClient({
       const res = await fetch(`/api/admin/faqs?id=${encodeURIComponent(faq.id)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete FAQ.") });
         return;
@@ -536,39 +576,44 @@ export function ContentManagerClient({
       {tab === "services" && (
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-3">
-            {services.map((s) => (
-              <div
-                key={s.id}
-                className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-              >
-                <div className="space-y-1">
-                  <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
-                    {s.kind} · {s.slug} · {s.is_active ? "ACTIVE" : "HIDDEN"}
-                  </p>
-                  <h2 className="font-display text-lg font-bold">{s.name}</h2>
-                  <p className="text-xs text-[var(--grey)]">{s.summary}</p>
-                  {s.starting_price_minor != null && (
-                    <p className="font-mono-meta text-xs text-[var(--cyan)]">
-                      From {formatGhsFromMinor(s.starting_price_minor)}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => loadService(s)}>
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
-                    onClick={() => handleDeleteService(s)}
-                    disabled={saving}
-                  >
-                    Delete
-                  </Button>
-                </div>
+            {services.length === 0 ? (
+              <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-8 text-sm text-[var(--grey)]">
+                No services configured yet. Use the form to add your first discipline.
               </div>
-            ))}
+            ) : (
+              services.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
+                >
+                  <div className="space-y-1">
+                    <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
+                      {s.kind} · {s.slug} · {s.is_active ? "ACTIVE" : "HIDDEN"}
+                    </p>
+                    <h2 className="font-display text-lg font-bold">{s.name}</h2>
+                    <p className="text-xs text-[var(--grey)]">{s.summary}</p>
+                    {s.starting_price_minor != null && (
+                      <p className="font-mono-meta text-xs text-[var(--cyan)]">
+                        From {formatGhsFromMinor(s.starting_price_minor)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={() => loadService(s)}>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeleteService(s)}
+                      disabled={saving}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <form
@@ -627,6 +672,8 @@ export function ContentManagerClient({
                 id="srv-name"
                 type="text"
                 required
+                minLength={2}
+                maxLength={120}
                 className={INPUT_CLASSES}
                 value={srvName}
                 onChange={(e) => {
@@ -643,6 +690,8 @@ export function ContentManagerClient({
               <textarea
                 id="srv-summary"
                 required
+                minLength={5}
+                maxLength={500}
                 rows={2}
                 className={TEXTAREA_CLASSES}
                 value={srvSummary}
@@ -653,6 +702,7 @@ export function ContentManagerClient({
             <FormField label="Full description (optional)" id="srv-desc">
               <textarea
                 id="srv-desc"
+                maxLength={5000}
                 rows={3}
                 className={TEXTAREA_CLASSES}
                 value={srvDesc}
@@ -666,7 +716,7 @@ export function ContentManagerClient({
                   id="srv-price"
                   type="number"
                   min={0}
-                  step="1"
+                  step="0.01"
                   className={INPUT_CLASSES}
                   value={srvStartingGhs}
                   onChange={(e) => setSrvStartingGhs(e.target.value)}
@@ -701,8 +751,7 @@ export function ContentManagerClient({
               {srvId && (
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  variant="danger"
                   onClick={() => {
                     const target = services.find((s) => s.id === srvId);
                     if (target) handleDeleteService(target);
@@ -720,41 +769,46 @@ export function ContentManagerClient({
       {tab === "packages" && (
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-3">
-            {packages.map((p) => (
-              <div
-                key={p.id}
-                className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-              >
-                <div className="space-y-1">
-                  <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
-                    {p.service_name ?? p.service_kind} · {p.is_active ? "ACTIVE" : "HIDDEN"}
-                    {p.is_featured ? " · FEATURED" : ""}
-                  </p>
-                  <h2 className="font-display text-lg font-bold">
-                    {p.name} — {formatGhsFromMinor(p.price_minor)}
-                  </h2>
-                  {p.summary && <p className="text-xs text-[var(--grey)]">{p.summary}</p>}
-                  <p className="text-xs text-[var(--grey)]">
-                    {(p.deliverables ?? []).length} deliverable lines
-                    {p.duration_hours ? ` · ${p.duration_hours} hrs` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => loadPackage(p)}>
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
-                    onClick={() => handleDeletePackage(p)}
-                    disabled={saving}
-                  >
-                    Delete
-                  </Button>
-                </div>
+            {packages.length === 0 ? (
+              <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-8 text-sm text-[var(--grey)]">
+                No packages configured yet. Select a service and create your first package.
               </div>
-            ))}
+            ) : (
+              packages.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
+                >
+                  <div className="space-y-1">
+                    <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
+                      {p.service_name ?? p.service_kind} · {p.is_active ? "ACTIVE" : "HIDDEN"}
+                      {p.is_featured ? " · FEATURED" : ""}
+                    </p>
+                    <h2 className="font-display text-lg font-bold">
+                      {p.name} — {formatGhsFromMinor(p.price_minor)}
+                    </h2>
+                    {p.summary && <p className="text-xs text-[var(--grey)]">{p.summary}</p>}
+                    <p className="text-xs text-[var(--grey)]">
+                      {(p.deliverables ?? []).length} deliverable lines
+                      {p.duration_hours ? ` · ${p.duration_hours} hrs` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={() => loadPackage(p)}>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeletePackage(p)}
+                      disabled={saving}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <form
@@ -806,6 +860,8 @@ export function ContentManagerClient({
                 id="pkg-name"
                 type="text"
                 required
+                minLength={2}
+                maxLength={120}
                 className={INPUT_CLASSES}
                 value={pkgName}
                 onChange={(e) => setPkgName(e.target.value)}
@@ -817,6 +873,7 @@ export function ContentManagerClient({
               <input
                 id="pkg-summary"
                 type="text"
+                maxLength={400}
                 className={INPUT_CLASSES}
                 value={pkgSummary}
                 onChange={(e) => setPkgSummary(e.target.value)}
@@ -830,7 +887,7 @@ export function ContentManagerClient({
                   type="number"
                   required
                   min={0}
-                  step="1"
+                  step="0.01"
                   className={INPUT_CLASSES}
                   value={pkgPriceGhs}
                   onChange={(e) => setPkgPriceGhs(e.target.value)}
@@ -841,6 +898,7 @@ export function ContentManagerClient({
                   id="pkg-hours"
                   type="number"
                   min={0.5}
+                  max={200}
                   step="0.5"
                   className={INPUT_CLASSES}
                   value={pkgHours}
@@ -901,8 +959,7 @@ export function ContentManagerClient({
               {pkgId && (
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  variant="danger"
                   onClick={() => {
                     const target = packages.find((p) => p.id === pkgId);
                     if (target) handleDeletePackage(target);
@@ -920,37 +977,42 @@ export function ContentManagerClient({
       {tab === "testimonials" && (
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-3">
-            {testimonials.map((t) => (
-              <div
-                key={t.id}
-                className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-              >
-                <div className="space-y-1 max-w-xl">
-                  <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
-                    {t.status} · CONSENT: {t.consent_to_publish ? "YES" : "NO"}
-                  </p>
-                  <p className="text-sm text-[var(--white)]">“{t.quote}”</p>
-                  <p className="text-xs text-[var(--grey)]">
-                    {t.author_name}
-                    {t.author_context ? ` — ${t.author_context}` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => loadTestimonial(t)}>
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
-                    onClick={() => handleDeleteTestimonial(t)}
-                    disabled={saving}
-                  >
-                    Delete
-                  </Button>
-                </div>
+            {testimonials.length === 0 ? (
+              <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-8 text-sm text-[var(--grey)]">
+                No testimonials recorded yet. Use the form to log an endorsement.
               </div>
-            ))}
+            ) : (
+              testimonials.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
+                >
+                  <div className="space-y-1 max-w-xl">
+                    <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
+                      {t.status} · CONSENT: {t.consent_to_publish ? "YES" : "NO"}
+                    </p>
+                    <p className="text-sm text-[var(--white)]">“{t.quote}”</p>
+                    <p className="text-xs text-[var(--grey)]">
+                      {t.author_name}
+                      {t.author_context ? ` — ${t.author_context}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={() => loadTestimonial(t)}>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeleteTestimonial(t)}
+                      disabled={saving}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <form
@@ -978,6 +1040,8 @@ export function ContentManagerClient({
                   id="test-author"
                   type="text"
                   required
+                  minLength={2}
+                  maxLength={100}
                   className={INPUT_CLASSES}
                   value={testAuthor}
                   onChange={(e) => setTestAuthor(e.target.value)}
@@ -987,6 +1051,7 @@ export function ContentManagerClient({
                 <input
                   id="test-context"
                   type="text"
+                  maxLength={120}
                   className={INPUT_CLASSES}
                   value={testContext}
                   onChange={(e) => setTestContext(e.target.value)}
@@ -1066,8 +1131,7 @@ export function ContentManagerClient({
               {testId && (
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  variant="danger"
                   onClick={() => {
                     const target = testimonials.find((t) => t.id === testId);
                     if (target) handleDeleteTestimonial(target);
@@ -1085,34 +1149,39 @@ export function ContentManagerClient({
       {tab === "faqs" && (
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-3">
-            {faqs.map((f) => (
-              <div
-                key={f.id}
-                className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-              >
-                <div className="space-y-1 max-w-xl">
-                  <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
-                    ORDER {f.sort_order} · {f.is_published ? "PUBLISHED" : "DRAFT"}
-                  </p>
-                  <h2 className="font-display text-base font-bold">{f.question}</h2>
-                  <p className="text-xs text-[var(--grey)]">{f.answer}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={() => loadFaq(f)}>
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
-                    onClick={() => handleDeleteFaq(f)}
-                    disabled={saving}
-                  >
-                    Delete
-                  </Button>
-                </div>
+            {faqs.length === 0 ? (
+              <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-8 text-sm text-[var(--grey)]">
+                No FAQs added yet. Use the form to add studio answers.
               </div>
-            ))}
+            ) : (
+              faqs.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex flex-wrap items-start justify-between gap-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
+                >
+                  <div className="space-y-1 max-w-xl">
+                    <p className="font-mono-meta text-xs uppercase text-[var(--grey)]">
+                      ORDER {f.sort_order} · {f.is_published ? "PUBLISHED" : "DRAFT"}
+                    </p>
+                    <h2 className="font-display text-base font-bold">{f.question}</h2>
+                    <p className="text-xs text-[var(--grey)]">{f.answer}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={() => loadFaq(f)}>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleDeleteFaq(f)}
+                      disabled={saving}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <form
@@ -1140,6 +1209,7 @@ export function ContentManagerClient({
                 type="text"
                 required
                 minLength={5}
+                maxLength={300}
                 className={INPUT_CLASSES}
                 value={faqQ}
                 onChange={(e) => setFaqQ(e.target.value)}
@@ -1151,6 +1221,7 @@ export function ContentManagerClient({
                 id="faq-a"
                 required
                 minLength={10}
+                maxLength={2000}
                 rows={4}
                 className={TEXTAREA_CLASSES}
                 value={faqA}
@@ -1189,8 +1260,7 @@ export function ContentManagerClient({
               {faqId && (
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+                  variant="danger"
                   onClick={() => {
                     const target = faqs.find((f) => f.id === faqId);
                     if (target) handleDeleteFaq(target);

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { BookingWizard } from "@/components/booking/booking-wizard";
 import { PageHeading } from "@/components/ui/page-heading";
 import { addDaysIso, buildWhatsAppUrl, getAccraTodayIso } from "@/lib/dates";
 import { getPublicUnavailableDates } from "@/modules/booking/service";
-import { serviceKindValues, type ServiceKind } from "@/modules/catalog/schema";
 import { getPublicCatalogue, getPublicSiteSettings } from "@/modules/catalog/service";
 import { getPublicPolicyVersions } from "@/modules/content-legal/service";
 
@@ -15,36 +15,30 @@ export const metadata: Metadata = {
     "Send a structured photography, videography, or graphic design request to Hephzibah Media. Check available dates and receive a quote within one working day.",
 };
 
-export default async function BookPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    kind?: string;
-    service?: string;
-    package?: string;
-    occasion?: string;
-    ref?: string;
-  }>;
-}) {
-  const sp = await searchParams;
-  const initialKind = serviceKindValues.includes(sp.kind as ServiceKind)
-    ? (sp.kind as ServiceKind)
-    : undefined;
-
+export default async function BookPage() {
   const today = getAccraTodayIso();
-  const to = addDaysIso(today, 395);
+  const [{ occasions, services, packages }, settings, policyVersions] = await Promise.all([
+    getPublicCatalogue(),
+    getPublicSiteSettings(),
+    getPublicPolicyVersions(),
+  ]);
 
-  const [{ occasions, services, packages }, settings, policyVersions, availability] =
-    await Promise.all([
-      getPublicCatalogue(),
-      getPublicSiteSettings(),
-      getPublicPolicyVersions(),
-      getPublicUnavailableDates(today, to).catch(() => ({
-        dates: [] as string[],
-        minLeadDays: 3,
-        maxAdvanceDays: 540,
-      })),
-    ]);
+  const maxDays = Math.min(Math.max(settings.max_advance_days, 60), 790);
+  const firstEnd = addDaysIso(today, Math.min(maxDays, 395));
+  const secondPromise =
+    maxDays > 395
+      ? getPublicUnavailableDates(addDaysIso(today, 396), addDaysIso(today, maxDays)).catch(() => ({
+          dates: [] as string[],
+        }))
+      : Promise.resolve({ dates: [] as string[] });
+
+  const [firstWindow, secondWindow] = await Promise.all([
+    getPublicUnavailableDates(today, firstEnd).catch(() => ({
+      dates: [] as string[],
+    })),
+    secondPromise,
+  ]);
+  const unavailableDates = Array.from(new Set([...firstWindow.dates, ...secondWindow.dates]));
 
   const fallbackWa = buildWhatsAppUrl(
     settings.whatsapp_e164,
@@ -86,19 +80,20 @@ export default async function BookPage({
         </div>
       </noscript>
 
-      <BookingWizard
-        services={services}
-        occasions={occasions}
-        packages={packages}
-        settings={settings}
-        policyVersions={policyVersions}
-        initialUnavailableDates={availability.dates}
-        initialKind={initialKind}
-        initialServiceId={sp.service}
-        initialPackageId={sp.package}
-        initialOccasionId={sp.occasion}
-        initialSource={sp.ref?.slice(0, 40)}
-      />
+      <Suspense
+        fallback={
+          <div className="h-96 rounded-[2px] border border-[var(--hairline)] bg-[var(--ink-2)] p-6" role="status" aria-label="Loading booking form" />
+        }
+      >
+        <BookingWizard
+          services={services}
+          occasions={occasions}
+          packages={packages}
+          settings={settings}
+          policyVersions={policyVersions}
+          initialUnavailableDates={unavailableDates}
+        />
+      </Suspense>
     </div>
   );
 }

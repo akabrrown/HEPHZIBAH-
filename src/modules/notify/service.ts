@@ -1,6 +1,7 @@
 import { renderEmailTemplate } from "@/emails/templates";
 import { withServiceRole } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
+import { ProblemError } from "@/lib/errors";
 import { findSiteSettings } from "@/modules/catalog/repository";
 import {
   enqueueOutboxEmail,
@@ -37,20 +38,28 @@ const resendOrLocalTransport: EmailTransport = {
       return;
     }
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: message.from,
-        to: [message.to],
-        subject: message.subject,
-        html: message.html,
-        text: message.text,
-      }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: message.from,
+          to: [message.to],
+          subject: message.subject,
+          html: message.html,
+          text: message.text,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       const bodyText = await res.text().catch(() => "");
       throw new Error(`Resend HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
@@ -70,30 +79,62 @@ export async function processEmailOutbox(
     return { settings: settingsRow, due: dueRows };
   });
 
+  const bookingIdsToEnrich = Array.from(
+    new Set(
+      due
+        .filter((row) => !row.payload?.reference && typeof row.payload?.booking_id === "string")
+        .map((row) => row.payload.booking_id as string)
+    )
+  );
+
+  const bookingInfoMap = new Map<
+    string,
+    {
+      reference: string;
+      client_name: string;
+      service_name: string;
+      event_date: string | null;
+      deadline: string | null;
+    }
+  >();
+
+  if (bookingIdsToEnrich.length > 0) {
+    await withServiceRole(async (tx) => {
+      const bRes = await tx.query<{
+        id: string;
+        reference: string;
+        client_name: string;
+        service_name: string;
+        event_date: string | null;
+        deadline: string | null;
+      }>(
+        `select b.id, b.reference, b.client_name, s.name as service_name,
+                b.event_date::text as event_date, b.deadline::text as deadline
+           from bookings b
+           join services s on s.id = b.service_id
+          where b.id = any($1::uuid[])`,
+        [bookingIdsToEnrich]
+      );
+      for (const b of bRes.rows) {
+        bookingInfoMap.set(b.id, {
+          reference: b.reference,
+          client_name: b.client_name,
+          service_name: b.service_name,
+          event_date: b.event_date,
+          deadline: b.deadline,
+        });
+      }
+    });
+  }
+
   let sent = 0;
   let failed = 0;
 
   for (const row of due) {
     try {
       const enrichedPayload = { ...row.payload };
-      if (!enrichedPayload.reference && enrichedPayload.booking_id) {
-        const bookingInfo = await withServiceRole(async (tx) => {
-          const bRes = await tx.query<{
-            reference: string;
-            client_name: string;
-            service_name: string;
-            event_date: string | null;
-            deadline: string | null;
-          }>(
-            `select b.reference, b.client_name, s.name as service_name,
-                    b.event_date::text as event_date, b.deadline::text as deadline
-               from bookings b
-               join services s on s.id = b.service_id
-              where b.id = $1::uuid`,
-            [enrichedPayload.booking_id]
-          );
-          return bRes.rows[0] ?? null;
-        });
+      if (!enrichedPayload.reference && typeof enrichedPayload.booking_id === "string") {
+        const bookingInfo = bookingInfoMap.get(enrichedPayload.booking_id);
         if (bookingInfo) {
           Object.assign(enrichedPayload, bookingInfo);
         }
@@ -126,16 +167,43 @@ export async function processEmailOutbox(
   return { sent, failed };
 }
 
-export async function retryOutboxMessage(outboxId: string): Promise<void> {
-  await withServiceRole(async (tx) => {
-    await tx.query(
+export async function retryOutboxMessage(outboxId: string): Promise<{
+  id: string;
+  status: OutboxEmailRow["status"];
+  lastError: string | null;
+}> {
+  const found = await withServiceRole(async (tx) => {
+    const res = await tx.query<{ id: string }>(
       `update email_outbox
-          set status = 'pending', next_attempt_at = now()
-        where id = $1::uuid`,
+          set status = 'pending',
+              attempts = 0,
+              last_error = null,
+              next_attempt_at = now()
+        where id = $1::uuid
+        returning id`,
       [outboxId]
     );
+    return res.rows[0] ?? null;
   });
+  if (!found) {
+    throw new ProblemError(404, "not_found", "Outbox item not found", "No queued email matches that ID.");
+  }
+
   await processEmailOutbox();
+
+  const updated = await withServiceRole(async (tx) => {
+    const res = await tx.query<{ status: OutboxEmailRow["status"]; last_error: string | null }>(
+      `select status, last_error from email_outbox where id = $1::uuid`,
+      [outboxId]
+    );
+    return res.rows[0] ?? null;
+  });
+
+  return {
+    id: outboxId,
+    status: updated?.status ?? "failed",
+    lastError: updated?.last_error ?? null,
+  };
 }
 
 export async function listOutboxForAdmin(): Promise<OutboxEmailRow[]> {

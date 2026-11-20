@@ -1,7 +1,9 @@
+import { z } from "zod";
 import type { AdminSessionPayload } from "@/lib/auth";
 import { withAdminRole, withServiceRole } from "@/lib/db";
-import { ProblemError } from "@/lib/errors";
-import { hashAccessToken, safeCompare } from "@/lib/tokens";
+import { ProblemError, rethrowKnownPgError } from "@/lib/errors";
+import { hashAccessToken } from "@/lib/tokens";
+import { verifyBookingAccessToken } from "@/modules/booking/service";
 import { findBookingById, findBookingByReference } from "@/modules/booking/repository";
 import { findSiteSettings } from "@/modules/catalog/repository";
 import { enqueueOutboxEmail } from "@/modules/notify/repository";
@@ -93,12 +95,18 @@ export async function upsertDraftQuoteAdmin(
       quoteId = inserted.rows[0]!.id;
     }
 
-    for (let i = 0; i < v.items.length; i++) {
-      const item = v.items[i]!;
+    if (v.items.length > 0) {
       await tx.query(
         `insert into quote_items (quote_id, position, description, quantity, unit_price_minor)
-         values ($1::uuid, $2, $3, $4, $5)`,
-        [quoteId, i, item.description, item.quantity, item.unit_price_minor]
+         select $1::uuid, t.pos, t.descr, t.qty, t.price
+           from unnest($2::int[], $3::text[], $4::numeric[], $5::int[]) as t(pos, descr, qty, price)`,
+        [
+          quoteId,
+          v.items.map((_, i) => i),
+          v.items.map((item) => item.description),
+          v.items.map((item) => item.quantity),
+          v.items.map((item) => item.unit_price_minor),
+        ]
       );
     }
 
@@ -107,12 +115,26 @@ export async function upsertDraftQuoteAdmin(
   });
 }
 
+const validDaysSchema = z.number().int().min(1).max(60);
+
 export async function sendQuoteAdmin(
   admin: AdminSessionPayload,
   bookingId: string,
   quoteId: string,
   validDaysOverride?: number
 ): Promise<QuoteRecord> {
+  if (validDaysOverride !== undefined) {
+    const validParsed = validDaysSchema.safeParse(validDaysOverride);
+    if (!validParsed.success) {
+      throw new ProblemError(
+        422,
+        "validation_error",
+        "Invalid quote validity period",
+        "Quote validity days must be a whole number between 1 and 60."
+      );
+    }
+  }
+
   let outboxEmail: {
     dedupeKey: string;
     toEmail: string;
@@ -124,6 +146,14 @@ export async function sendQuoteAdmin(
     const booking = await findBookingById(tx, bookingId);
     if (!booking) {
       throw new ProblemError(404, "not_found", "Booking not found", "No booking matches that ID.");
+    }
+    if (!["new", "reviewing", "quoted", "expired"].includes(booking.status)) {
+      throw new ProblemError(
+        409,
+        "invalid_state",
+        "Cannot send quote in current booking state",
+        `Cannot send a quote while booking is ${booking.status}.`
+      );
     }
     const quotes = await findQuotesByBookingId(tx, booking.id);
     const quote = quotes.find((q) => q.id === quoteId);
@@ -138,11 +168,13 @@ export async function sendQuoteAdmin(
     }
 
     const settings = await findSiteSettings(tx);
-    const validityDays = validDaysOverride && validDaysOverride > 0 ? validDaysOverride : settings.quote_validity_days;
+    const validityDays = validDaysOverride ?? settings.quote_validity_days;
     const validUntil = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000).toISOString();
 
-    if (booking.status === "new") {
+    let eventFromStatus = booking.status;
+    if (booking.status === "new" || booking.status === "expired") {
       await tx.query(`update bookings set status = 'reviewing' where id = $1::uuid`, [booking.id]);
+      eventFromStatus = "reviewing";
     }
 
     await tx.query(
@@ -166,7 +198,7 @@ export async function sendQuoteAdmin(
       [
         booking.id,
         admin.adminId,
-        booking.status === "new" ? "reviewing" : booking.status,
+        eventFromStatus,
         `Quote v${quote.version} sent`,
       ]
     );
@@ -245,11 +277,18 @@ export async function reviseQuoteAdmin(
     );
     const newQuoteId = inserted.rows[0]!.id;
 
-    for (const item of oldQuote.items) {
+    if (oldQuote.items.length > 0) {
       await tx.query(
         `insert into quote_items (quote_id, position, description, quantity, unit_price_minor)
-         values ($1::uuid, $2, $3, $4, $5)`,
-        [newQuoteId, item.position, item.description, item.quantity, item.unit_price_minor]
+         select $1::uuid, t.pos, t.descr, t.qty, t.price
+           from unnest($2::int[], $3::text[], $4::numeric[], $5::int[]) as t(pos, descr, qty, price)`,
+        [
+          newQuoteId,
+          oldQuote.items.map((item) => item.position),
+          oldQuote.items.map((item) => item.description),
+          oldQuote.items.map((item) => item.quantity),
+          oldQuote.items.map((item) => item.unit_price_minor),
+        ]
       );
     }
 
@@ -268,12 +307,12 @@ export async function acceptQuoteByClient(
     throw new ProblemError(422, "validation_error", "Invalid quote selection", "Provide a valid quote ID.");
   }
 
-  const tokenHash = hashAccessToken(rawToken);
+  const tokenHash = hashAccessToken(rawToken.trim());
   const quoteId = parsed.data.quoteId;
 
   await withServiceRole(async (tx) => {
     const booking = await findBookingByReference(tx, reference.trim());
-    if (!booking || !safeCompare(tokenHash, booking.access_token_hash)) {
+    if (!booking || !verifyBookingAccessToken(booking, rawToken)) {
       throw new ProblemError(404, "not_found", "Booking not found", "Invalid or expired status link.");
     }
 
@@ -358,24 +397,32 @@ export async function recordPaymentAdmin(
       throw new ProblemError(404, "not_found", "Booking not found", "No booking matches that ID.");
     }
 
-    const res = await tx.query<PaymentRecord>(
-      `insert into payments (
-         booking_id, provider, method, amount_minor, is_refund,
-         provider_reference, received_at, note, recorded_by
-       ) values ($1::uuid, 'manual', $2::payment_method, $3, $4, $5, $6::timestamptz, $7, $8::uuid)
-       returning id, booking_id, provider, method, amount_minor, is_refund, currency,
-                 provider_reference, received_at::text as received_at, note, recorded_by, created_at::text as created_at`,
-      [
-        booking.id,
-        v.method,
-        v.amount_minor,
-        v.is_refund,
-        v.provider_reference ?? null,
-        v.received_at,
-        v.note ?? null,
-        admin.adminId,
-      ]
-    );
+    const providerRef = v.provider_reference?.trim() || null;
+    let res: { rows: PaymentRecord[] };
+    try {
+      res = await tx.query<PaymentRecord>(
+        `insert into payments (
+           booking_id, provider, method, amount_minor, is_refund,
+           provider_reference, received_at, note, recorded_by
+         ) values ($1::uuid, 'manual', $2::payment_method, $3, $4, $5, $6::timestamptz, $7, $8::uuid)
+         returning id, booking_id, provider, method, amount_minor, is_refund, currency,
+                   provider_reference, received_at::text as received_at, note, recorded_by, created_at::text as created_at`,
+        [
+          booking.id,
+          v.method,
+          v.amount_minor,
+          v.is_refund,
+          providerRef,
+          v.received_at,
+          v.note ?? null,
+          admin.adminId,
+        ]
+      );
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        uniqueConflict: "A payment with this provider reference has already been recorded.",
+      });
+    }
     const payment = res.rows[0]!;
 
     await tx.query(
@@ -385,7 +432,7 @@ export async function recordPaymentAdmin(
         booking.id,
         admin.adminId,
         v.is_refund ? "refund_recorded" : "payment_recorded",
-        `${v.is_refund ? "Refund" : "Payment"} recorded (${v.method.toUpperCase()} · ${v.amount_minor / 100} GHS)${v.provider_reference ? ` · Ref ${v.provider_reference}` : ""}`,
+        `${v.is_refund ? "Refund" : "Payment"} recorded (${v.method.toUpperCase()} · ${v.amount_minor / 100} GHS)${providerRef ? ` · Ref ${providerRef}` : ""}`,
       ]
     );
 

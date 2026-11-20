@@ -84,6 +84,7 @@ export function PortfolioListClient({
   const [consent, setConsent] = useState(false);
   const [consentNote, setConsentNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const visibleItems =
@@ -112,9 +113,13 @@ export function PortfolioListClient({
           consent_note: consentNote.trim() || null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError(readErrorMessage(data, "Could not create draft portfolio item."));
+        return;
+      }
+      if (!data || typeof data !== "object" || !("id" in data)) {
+        setError("Unexpected response when creating draft portfolio item.");
         return;
       }
       const created = data as PortfolioItem;
@@ -131,12 +136,13 @@ export function PortfolioListClient({
   async function handleDeleteItem(itemToDelete: PortfolioItem) {
     const confirmMsg = `Permanently delete "${itemToDelete.title}" and all attached gallery frames? This action cannot be undone.`;
     if (!window.confirm(confirmMsg)) return;
+    setDeletingId(itemToDelete.id);
     setError(null);
     try {
       const res = await fetch(`/api/admin/portfolio-items/${itemToDelete.id}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError(readErrorMessage(data, "Could not delete portfolio item."));
         return;
@@ -145,6 +151,8 @@ export function PortfolioListClient({
       router.refresh();
     } catch {
       setError("Network error while deleting portfolio item.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -164,17 +172,18 @@ export function PortfolioListClient({
         </Button>
       </div>
 
+      {error && (
+        <div role="alert" className="border border-[var(--red)] bg-[var(--ink-2)] p-3 text-sm text-[var(--red)]">
+          {error}
+        </div>
+      )}
+
       {showCreate && (
         <form
           onSubmit={handleCreateDraft}
           className="space-y-4 border border-[var(--hairline)] bg-[var(--ink-2)] p-6"
         >
           <h2 className="font-display text-lg font-bold">New portfolio item (starts as draft)</h2>
-          {error && (
-            <div role="alert" className="border border-[var(--red)] bg-[var(--black)] p-3 text-xs text-[var(--red)]">
-              {error}
-            </div>
-          )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <FormField label="Service kind" id="new-pf-kind" required>
@@ -361,8 +370,9 @@ export function PortfolioListClient({
               >
                 <div className="aspect-[16/10] w-full overflow-hidden border-b border-[var(--hairline)] bg-[var(--black)]">
                   <img
-                    src={resolveImageUrl(thumbId)}
+                    src={resolveImageUrl(thumbId, { width: 600 })}
                     alt={cover?.alt_text ?? item.title}
+                    loading="lazy"
                     className="h-full w-full object-cover"
                   />
                 </div>
@@ -410,15 +420,17 @@ export function PortfolioListClient({
                         </Link>
                       )}
                     </div>
-                    <button
+                    <Button
                       type="button"
+                      variant="danger"
+                      className="min-h-[40px] px-3 py-1.5 text-xs"
+                      disabled={deletingId === item.id}
                       onClick={() => handleDeleteItem(item)}
-                      className="inline-flex min-h-[44px] items-center gap-1 text-xs text-[var(--red)] hover:underline cursor-pointer"
                       title="Permanently delete item"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span>Delete</span>
-                    </button>
+                      <span>{deletingId === item.id ? "Deleting..." : "Delete"}</span>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -464,6 +476,7 @@ export function PortfolioDetailClient({
   const [imageCaption, setImageCaption] = useState("");
   const [imageCover, setImageCover] = useState(assets.length === 0);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
 
   // Add Video embed state
   const [videoUrl, setVideoUrl] = useState("");
@@ -489,12 +502,14 @@ export function PortfolioDetailClient({
   async function refreshItem() {
     const res = await fetch(`/api/admin/portfolio-items/${item.id}`, { cache: "no-store" });
     if (res.ok) {
-      const fresh = (await res.json()) as PortfolioItem;
-      setItem(fresh);
-      const nextAssets = fresh.media_assets ?? [];
-      setAssets(nextAssets);
-      setAltEdits(Object.fromEntries(nextAssets.map((a) => [a.id, a.alt_text ?? ""])));
-      setCaptionEdits(Object.fromEntries(nextAssets.map((a) => [a.id, a.caption ?? ""])));
+      const fresh = (await res.json().catch(() => null)) as PortfolioItem | null;
+      if (fresh) {
+        setItem(fresh);
+        const nextAssets = fresh.media_assets ?? [];
+        setAssets(nextAssets);
+        setAltEdits(Object.fromEntries(nextAssets.map((a) => [a.id, a.alt_text ?? ""])));
+        setCaptionEdits(Object.fromEntries(nextAssets.map((a) => [a.id, a.caption ?? ""])));
+      }
     }
     router.refresh();
   }
@@ -521,7 +536,7 @@ export function PortfolioDetailClient({
           consent_note: consentNote.trim() || null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not update portfolio item.") });
         return;
@@ -550,7 +565,7 @@ export function PortfolioDetailClient({
       const res = await fetch(`/api/admin/portfolio-items/${item.id}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete portfolio item.") });
         setSavingItem(false);
@@ -564,17 +579,35 @@ export function PortfolioDetailClient({
     }
   }
 
-  async function handleFileUpload(file: File) {
-    setUploadingFile(true);
+  async function handleFileUpload(file: File, inputEl?: HTMLInputElement | null) {
     setBanner(null);
+    const defaultMaxBytes = 15 * 1024 * 1024;
+    if (file.size > defaultMaxBytes) {
+      if (inputEl) inputEl.value = "";
+      setBanner({
+        kind: "err",
+        text: "Selected file exceeds the 15 MB upload limit.",
+      });
+      return;
+    }
+
+    setUploadingFile(true);
     try {
       const signRes = await fetch("/api/admin/uploads/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folder: "hephzibah/portfolio" }),
       });
-      const signData = await signRes.json();
-      if (!signRes.ok) {
+      const signData = (await signRes.json().catch(() => null)) as {
+        signature?: string;
+        timestamp?: number;
+        folder?: string;
+        cloudName?: string;
+        apiKey?: string;
+        maxFileSizeBytes?: number;
+        allowedFormats?: string[];
+      } | null;
+      if (!signRes.ok || !signData?.signature || !signData.cloudName || !signData.apiKey) {
         setBanner({
           kind: "err",
           text: readErrorMessage(
@@ -585,20 +618,47 @@ export function PortfolioDetailClient({
         return;
       }
 
+      const maxFileSizeBytes =
+        typeof signData.maxFileSizeBytes === "number" ? signData.maxFileSizeBytes : defaultMaxBytes;
+      if (file.size > maxFileSizeBytes) {
+        setBanner({
+          kind: "err",
+          text: `Selected file exceeds the ${Math.round(maxFileSizeBytes / (1024 * 1024))} MB limit.`,
+        });
+        return;
+      }
+
+      const allowedFormats =
+        Array.isArray(signData.allowedFormats) && signData.allowedFormats.length > 0
+          ? signData.allowedFormats.join(",")
+          : "jpg,jpeg,png,webp,avif";
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("api_key", signData.apiKey);
       formData.append("timestamp", String(signData.timestamp));
       formData.append("signature", signData.signature);
-      formData.append("folder", signData.folder);
+      formData.append("folder", signData.folder ?? "hephzibah/portfolio");
+      formData.append("allowed_formats", allowedFormats);
 
       const uploadRes = await fetch(
         `https://api.cloudinary.com/v1_1/${signData.cloudName}/image/upload`,
         { method: "POST", body: formData }
       );
-      const uploaded = await uploadRes.json();
-      if (!uploadRes.ok || !uploaded.public_id) {
-        setBanner({ kind: "err", text: "Cloudinary upload failed. Try again or use a studio asset ID." });
+      const uploaded = (await uploadRes.json().catch(() => null)) as {
+        public_id?: string;
+        width?: number;
+        height?: number;
+        error?: { message?: string };
+      } | null;
+      if (!uploadRes.ok || !uploaded?.public_id) {
+        const cloudinaryMsg = uploaded?.error?.message;
+        setBanner({
+          kind: "err",
+          text: cloudinaryMsg
+            ? `Cloudinary upload failed: ${cloudinaryMsg}`
+            : "Cloudinary upload failed. Try again or use a studio asset ID.",
+        });
         return;
       }
 
@@ -610,36 +670,44 @@ export function PortfolioDetailClient({
       setBanner({ kind: "err", text: "Upload failed. Check connection or use a studio asset ID." });
     } finally {
       setUploadingFile(false);
+      if (inputEl) inputEl.value = "";
     }
   }
 
   async function handleAddImage(e: React.FormEvent) {
     e.preventDefault();
+    setMediaBusy(true);
     setBanner(null);
-    const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "image",
-        position: assets.length,
-        is_cover: imageCover,
-        cloudinary_public_id: imagePublicId.trim(),
-        width: Number(imageWidth) || null,
-        height: Number(imageHeight) || null,
-        alt_text: imageAlt.trim(),
-        caption: imageCaption.trim() || null,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ kind: "err", text: readErrorMessage(data, "Could not add image asset.") });
-      return;
+    try {
+      const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "image",
+          position: assets.length,
+          is_cover: imageCover,
+          cloudinary_public_id: imagePublicId.trim(),
+          width: Number(imageWidth) || null,
+          height: Number(imageHeight) || null,
+          alt_text: imageAlt.trim(),
+          caption: imageCaption.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not add image asset.") });
+        return;
+      }
+      setImageAlt("");
+      setImageCaption("");
+      setImageCover(false);
+      await refreshItem();
+      setBanner({ kind: "ok", text: "Image frame added to gallery." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error adding image asset." });
+    } finally {
+      setMediaBusy(false);
     }
-    setImageAlt("");
-    setImageCaption("");
-    setImageCover(false);
-    await refreshItem();
-    setBanner({ kind: "ok", text: "Image frame added to gallery." });
   }
 
   async function handleAddVideo(e: React.FormEvent) {
@@ -650,75 +718,128 @@ export function PortfolioDetailClient({
       setBanner({ kind: "err", text: "Enter a full YouTube or Vimeo link (https://youtube.com/... or https://vimeo.com/...)." });
       return;
     }
-    const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "video_embed",
-        position: assets.length,
-        is_cover: videoCover,
-        video_provider: parsed.provider,
-        video_id: parsed.videoId,
-        poster_public_id: videoPoster.trim(),
-        alt_text: videoAlt.trim(),
-        duration_seconds: videoDuration ? Number(videoDuration) : null,
-        caption: videoCaption.trim() || null,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ kind: "err", text: readErrorMessage(data, "Could not attach video embed.") });
-      return;
+    setMediaBusy(true);
+    try {
+      const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "video_embed",
+          position: assets.length,
+          is_cover: videoCover,
+          video_provider: parsed.provider,
+          video_id: parsed.videoId,
+          poster_public_id: videoPoster.trim(),
+          alt_text: videoAlt.trim(),
+          duration_seconds: videoDuration ? Number(videoDuration) : null,
+          caption: videoCaption.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not attach video embed.") });
+        return;
+      }
+      setVideoUrl("");
+      setVideoAlt("");
+      setVideoDuration("");
+      setVideoCaption("");
+      setVideoCover(false);
+      await refreshItem();
+      setBanner({ kind: "ok", text: "Video embed attached." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error attaching video embed." });
+    } finally {
+      setMediaBusy(false);
     }
-    setVideoUrl("");
-    setVideoAlt("");
-    setVideoDuration("");
-    setVideoCaption("");
-    setVideoCover(false);
-    await refreshItem();
-    setBanner({ kind: "ok", text: "Video embed attached." });
   }
 
   async function handleUpdateMedia(
     mediaId: string,
     payload: { is_cover?: boolean; position?: number; alt_text?: string; caption?: string | null }
   ) {
+    setMediaBusy(true);
     setBanner(null);
-    const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mediaId, ...payload }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ kind: "err", text: readErrorMessage(data, "Could not update media asset.") });
-      return;
+    try {
+      const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId, ...payload }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not update media asset.") });
+        return;
+      }
+      await refreshItem();
+      setBanner({ kind: "ok", text: "Media asset updated." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error updating media asset." });
+    } finally {
+      setMediaBusy(false);
     }
-    await refreshItem();
-    setBanner({ kind: "ok", text: "Media asset updated." });
   }
 
   async function handleMoveMedia(index: number, direction: -1 | 1) {
     const targetIdx = index + direction;
-    const current = assets[index];
-    const swap = assets[targetIdx];
-    if (!current || !swap) return;
-    await handleUpdateMedia(current.id, { position: swap.position });
-    await handleUpdateMedia(swap.id, { position: current.position });
+    if (targetIdx < 0 || targetIdx >= assets.length) return;
+    const reordered = [...assets];
+    const [moved] = reordered.splice(index, 1);
+    if (!moved) return;
+    reordered.splice(targetIdx, 0, moved);
+
+    setMediaBusy(true);
+    setBanner(null);
+    try {
+      for (let pos = 0; pos < reordered.length; pos++) {
+        const frame = reordered[pos]!;
+        if (frame.position !== pos) {
+          const res = await fetch(`/api/admin/portfolio-items/${item.id}/media`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mediaId: frame.id, position: pos }),
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            setBanner({ kind: "err", text: readErrorMessage(data, "Could not reorder media frames.") });
+            return;
+          }
+        }
+      }
+      await refreshItem();
+      setBanner({ kind: "ok", text: "Media frame order updated." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error reordering media frames." });
+    } finally {
+      setMediaBusy(false);
+    }
   }
 
   async function handleDeleteMedia(mediaId: string) {
-    setBanner(null);
-    const res = await fetch(`/api/admin/portfolio-items/${item.id}/media?mediaId=${encodeURIComponent(mediaId)}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete media asset.") });
+    if (!window.confirm("Remove this media frame from the gallery? This cannot be undone.")) {
       return;
     }
-    await refreshItem();
-    setBanner({ kind: "ok", text: "Media frame removed." });
+    setMediaBusy(true);
+    setBanner(null);
+    try {
+      const res = await fetch(
+        `/api/admin/portfolio-items/${item.id}/media?mediaId=${encodeURIComponent(mediaId)}`,
+        {
+          method: "DELETE",
+        }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setBanner({ kind: "err", text: readErrorMessage(data, "Could not delete media asset.") });
+        return;
+      }
+      await refreshItem();
+      setBanner({ kind: "ok", text: "Media frame removed." });
+    } catch {
+      setBanner({ kind: "err", text: "Network error removing media frame." });
+    } finally {
+      setMediaBusy(false);
+    }
   }
 
   return (
@@ -746,8 +867,7 @@ export function PortfolioDetailClient({
           )}
           <Button
             type="button"
-            variant="ghost"
-            className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white"
+            variant="danger"
             onClick={handleDeletePortfolioItem}
             disabled={savingItem}
           >
@@ -947,8 +1067,8 @@ export function PortfolioDetailClient({
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            className="text-[var(--red)] border border-[var(--red)]/40 hover:bg-[var(--red)] hover:text-white ml-auto"
+            variant="danger"
+            className="ml-auto"
             onClick={handleDeletePortfolioItem}
             disabled={savingItem}
           >
@@ -985,11 +1105,12 @@ export function PortfolioDetailClient({
                   id="cloudinary-upload-input"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/avif"
-                  disabled={uploadingFile}
+                  disabled={uploadingFile || mediaBusy}
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
+                    const inputEl = e.currentTarget;
+                    const file = inputEl.files?.[0];
                     if (file) {
-                      void handleFileUpload(file);
+                      void handleFileUpload(file, inputEl);
                     }
                   }}
                   className="text-xs text-[var(--grey)] file:mr-3 file:border file:border-[var(--control-border)] file:bg-[var(--black)] file:px-3 file:py-2 file:text-xs file:text-[var(--white)]"
@@ -1103,7 +1224,7 @@ export function PortfolioDetailClient({
               <span>Use as portfolio cover frame</span>
             </label>
 
-            <Button type="submit" variant="secondary">
+            <Button type="submit" variant="secondary" disabled={mediaBusy || uploadingFile}>
               Add image frame
             </Button>
           </form>
@@ -1188,7 +1309,7 @@ export function PortfolioDetailClient({
               <span>Set video poster as cover frame</span>
             </label>
 
-            <Button type="submit" variant="secondary">
+            <Button type="submit" variant="secondary" disabled={mediaBusy}>
               Attach video embed
             </Button>
           </form>
@@ -1215,8 +1336,9 @@ export function PortfolioDetailClient({
                   >
                     <div className="aspect-[16/10] overflow-hidden border border-[var(--hairline)] bg-[var(--black)]">
                       <img
-                        src={resolveImageUrl(thumbId)}
+                        src={resolveImageUrl(thumbId, { width: 360 })}
                         alt={asset.alt_text ?? "Media preview"}
+                        loading="lazy"
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -1243,8 +1365,9 @@ export function PortfolioDetailClient({
                           {!asset.is_cover && (
                             <button
                               type="button"
+                              disabled={mediaBusy}
                               onClick={() => handleUpdateMedia(asset.id, { is_cover: true })}
-                              className="inline-flex min-h-[44px] items-center gap-1 border border-[var(--control-border)] px-3 text-xs text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] cursor-pointer"
+                              className="inline-flex min-h-[44px] items-center gap-1 border border-[var(--control-border)] px-3 text-xs text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] disabled:opacity-40 cursor-pointer"
                             >
                               <Star className="h-3.5 w-3.5" aria-hidden="true" />
                               <span>Set cover</span>
@@ -1252,7 +1375,7 @@ export function PortfolioDetailClient({
                           )}
                           <button
                             type="button"
-                            disabled={idx === 0}
+                            disabled={mediaBusy || idx === 0}
                             aria-label="Move frame up"
                             onClick={() => handleMoveMedia(idx, -1)}
                             className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] text-[var(--white)] disabled:opacity-40 cursor-pointer"
@@ -1261,7 +1384,7 @@ export function PortfolioDetailClient({
                           </button>
                           <button
                             type="button"
-                            disabled={idx === assets.length - 1}
+                            disabled={mediaBusy || idx === assets.length - 1}
                             aria-label="Move frame down"
                             onClick={() => handleMoveMedia(idx, 1)}
                             className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] text-[var(--white)] disabled:opacity-40 cursor-pointer"
@@ -1270,9 +1393,10 @@ export function PortfolioDetailClient({
                           </button>
                           <button
                             type="button"
+                            disabled={mediaBusy}
                             aria-label="Delete frame"
                             onClick={() => handleDeleteMedia(asset.id)}
-                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] text-[var(--red)] hover:border-[var(--red)] cursor-pointer"
+                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] text-[var(--red)] hover:border-[var(--red)] disabled:opacity-40 cursor-pointer"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -1313,6 +1437,7 @@ export function PortfolioDetailClient({
                       <Button
                         type="button"
                         variant="secondary"
+                        disabled={mediaBusy}
                         onClick={() =>
                           handleUpdateMedia(asset.id, {
                             alt_text: altEdits[asset.id] ?? "",

@@ -37,9 +37,18 @@ export function AdminCalendarClient({
           reason: reason.trim(),
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      const body = (await res.json().catch(() => null)) as {
+        detail?: string;
+        fieldErrors?: Record<string, string[]>;
+      } | null;
       if (!res.ok) {
-        setError(body.detail ?? "Could not block dates.");
+        const fieldMsg = body?.fieldErrors
+          ? Object.entries(body.fieldErrors)
+              .filter(([, errs]) => Array.isArray(errs) && errs.length > 0)
+              .map(([field, errs]) => `${field}: ${errs.join(", ")}`)
+              .join(" | ")
+          : "";
+        setError(fieldMsg || body?.detail || "Could not block dates.");
         return;
       }
       setFromDate("");
@@ -53,13 +62,21 @@ export function AdminCalendarClient({
     }
   }
 
-  async function handleRemoveBlocked(id: string) {
+  async function handleRemoveBlocked(id: string, rangeLabel: string) {
+    if (!window.confirm(`Unblock "${rangeLabel}" so clients can request bookings on these dates?`)) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await fetch(`/api/admin/blocked-dates?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/admin/blocked-dates?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+      const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+      if (!res.ok) {
+        setError(body?.detail ?? "Could not remove blocked range.");
+        return;
+      }
       router.refresh();
     } catch {
       setError("Could not remove blocked range.");
@@ -148,6 +165,7 @@ export function AdminCalendarClient({
                 <input
                   id="block-to"
                   type="date"
+                  min={fromDate || undefined}
                   className={INPUT_CLASSES}
                   value={toDateInclusive}
                   onChange={(e) => setToDateInclusive(e.target.value)}
@@ -164,6 +182,7 @@ export function AdminCalendarClient({
                 id="block-reason"
                 type="text"
                 required
+                minLength={2}
                 className={INPUT_CLASSES}
                 placeholder="e.g. Holiday, equipment servicing"
                 value={reason}
@@ -196,8 +215,13 @@ export function AdminCalendarClient({
                       type="button"
                       aria-label="Unblock range"
                       disabled={busy}
-                      onClick={() => handleRemoveBlocked(range.id)}
-                      className="inline-flex h-[40px] w-[40px] items-center justify-center text-[var(--grey)] hover:text-[var(--red)] cursor-pointer"
+                      onClick={() =>
+                        handleRemoveBlocked(
+                          range.id,
+                          `${formatDisplayDate(range.from_date)} - ${formatDisplayDate(range.to_date_inclusive)}`
+                        )
+                      }
+                      className="inline-flex h-[40px] w-[40px] items-center justify-center text-[var(--grey)] hover:text-[var(--red)] cursor-pointer disabled:opacity-50"
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </button>

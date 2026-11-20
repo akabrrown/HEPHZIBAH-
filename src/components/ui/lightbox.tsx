@@ -23,6 +23,8 @@ export function PortfolioGalleryClient({
 
   useEffect(() => {
     if (lightboxIndex === null) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     closeBtnRef.current?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
@@ -40,7 +42,10 @@ export function PortfolioGalleryClient({
     }
 
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [lightboxIndex, assets.length]);
 
   const activeAsset = lightboxIndex !== null ? assets[lightboxIndex] : null;
@@ -86,10 +91,11 @@ export function PortfolioGalleryClient({
                         alt={asset.alt_text ?? title}
                         width={width}
                         height={height}
+                        loading="lazy"
                         className="h-full w-full object-cover"
                       />
-                      <span className="absolute inset-0 flex items-center justify-center bg-[var(--black)]/40 transition-colors group-hover:bg-[var(--black)]/25">
-                        <span className="inline-flex min-h-[56px] items-center gap-2.5 rounded-[2px] bg-[var(--red)] px-5 py-3 text-sm font-bold text-[var(--black)]">
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/40 transition-colors group-hover:bg-black/25">
+                        <span className="inline-flex min-h-[56px] items-center gap-2.5 rounded-[2px] bg-[var(--red)] px-5 py-3 text-sm font-bold text-[var(--btn-action-text)]">
                           <Play className="h-5 w-5 fill-current" aria-hidden="true" />
                           Play film
                         </span>
@@ -103,7 +109,7 @@ export function PortfolioGalleryClient({
                     href={externalUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[var(--cyan)] underline underline-offset-4"
+                    className="inline-flex min-h-[44px] items-center gap-1 text-[var(--cyan)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                   >
                     Open in new tab
                     <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />

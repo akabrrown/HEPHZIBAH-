@@ -1,8 +1,9 @@
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
 import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { withAdminRole, withAnonRole } from "@/lib/db";
-import { ProblemError } from "@/lib/errors";
+import { ProblemError, rethrowKnownPgError } from "@/lib/errors";
 import {
   findActiveOccasions,
   findActivePackages,
@@ -22,7 +23,7 @@ import {
   type SiteSettings,
 } from "./schema";
 
-export async function getPublicSiteSettings(): Promise<SiteSettings> {
+export const getPublicSiteSettings = cache(async (): Promise<SiteSettings> => {
   const cacheKey = "catalog:site_settings";
   const cached = getCached<SiteSettings>(cacheKey);
   if (cached) return cached;
@@ -30,13 +31,17 @@ export async function getPublicSiteSettings(): Promise<SiteSettings> {
   const result = await withAnonRole((tx) => findSiteSettings(tx));
   setCached(cacheKey, result, 300);
   return result;
+});
+
+export async function getAdminSiteSettings(admin: AdminSessionPayload): Promise<SiteSettings> {
+  return withAdminRole(admin.adminId, admin.aal, (tx) => findSiteSettings(tx));
 }
 
-export async function getPublicCatalogue(kind?: ServiceKind): Promise<{
+export const getPublicCatalogue = cache(async (kind?: ServiceKind): Promise<{
   occasions: Occasion[];
   services: Service[];
   packages: PackageItem[];
-}> {
+}> => {
   const cacheKey = `catalog:public:${kind ?? "all"}`;
   const cached = getCached<{
     occasions: Occasion[];
@@ -56,7 +61,7 @@ export async function getPublicCatalogue(kind?: ServiceKind): Promise<{
 
   setCached(cacheKey, result, 300);
   return result;
-}
+});
 
 export async function listAdminServicesAndPackages(admin: AdminSessionPayload): Promise<{
   services: Service[];
@@ -83,21 +88,43 @@ export async function upsertAdminService(
   }
   const v = parsed.data;
   const saved = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    if (v.id) {
+    try {
+      if (v.id) {
+        const res = await tx.query<Service>(
+          `update services
+              set kind = $2::service_kind,
+                  slug = $3,
+                  name = $4,
+                  summary = $5,
+                  description_md = $6,
+                  starting_price_minor = $7,
+                  sort_order = $8,
+                  is_active = $9
+            where id = $1::uuid
+            returning id, kind, slug, name, summary, description_md, starting_price_minor, currency, sort_order, is_active, created_at::text, updated_at::text`,
+          [
+            v.id,
+            v.kind,
+            v.slug,
+            v.name,
+            v.summary,
+            v.description_md ?? null,
+            v.starting_price_minor ?? null,
+            v.sort_order,
+            v.is_active,
+          ]
+        );
+        if (!res.rows[0]) {
+          throw new ProblemError(404, "not_found", "Service not found", "No service matches that ID.");
+        }
+        return res.rows[0];
+      }
+
       const res = await tx.query<Service>(
-        `update services
-            set kind = $2::service_kind,
-                slug = $3,
-                name = $4,
-                summary = $5,
-                description_md = $6,
-                starting_price_minor = $7,
-                sort_order = $8,
-                is_active = $9
-          where id = $1::uuid
-          returning id, kind, slug, name, summary, description_md, starting_price_minor, currency, sort_order, is_active, created_at::text, updated_at::text`,
+        `insert into services (kind, slug, name, summary, description_md, starting_price_minor, sort_order, is_active)
+         values ($1::service_kind, $2, $3, $4, $5, $6, $7, $8)
+         returning id, kind, slug, name, summary, description_md, starting_price_minor, currency, sort_order, is_active, created_at::text, updated_at::text`,
         [
-          v.id,
           v.kind,
           v.slug,
           v.name,
@@ -108,28 +135,12 @@ export async function upsertAdminService(
           v.is_active,
         ]
       );
-      if (!res.rows[0]) {
-        throw new ProblemError(404, "not_found", "Service not found", "No service matches that ID.");
-      }
-      return res.rows[0];
+      return res.rows[0]!;
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        uniqueConflict: "A service with this slug already exists.",
+      });
     }
-
-    const res = await tx.query<Service>(
-      `insert into services (kind, slug, name, summary, description_md, starting_price_minor, sort_order, is_active)
-       values ($1::service_kind, $2, $3, $4, $5, $6, $7, $8)
-       returning id, kind, slug, name, summary, description_md, starting_price_minor, currency, sort_order, is_active, created_at::text, updated_at::text`,
-      [
-        v.kind,
-        v.slug,
-        v.name,
-        v.summary,
-        v.description_md ?? null,
-        v.starting_price_minor ?? null,
-        v.sort_order,
-        v.is_active,
-      ]
-    );
-    return res.rows[0]!;
   });
 
   invalidateCache("catalog");
@@ -139,6 +150,7 @@ export async function upsertAdminService(
     revalidatePath(`/services/${saved.kind}`);
     revalidatePath("/pricing");
     revalidatePath("/book");
+    revalidatePath("/sitemap.xml");
   } catch {
     // Non-Next test contexts ignore cache revalidation
   }
@@ -158,23 +170,47 @@ export async function upsertAdminPackage(
   }
   const v = parsed.data;
   const saved = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    if (v.id) {
+    try {
+      if (v.id) {
+        const res = await tx.query<PackageItem>(
+          `update packages
+              set service_id = $2::uuid,
+                  name = $3,
+                  summary = $4,
+                  price_minor = $5,
+                  duration_hours = $6,
+                  deliverables = $7,
+                  is_featured = $8,
+                  sort_order = $9,
+                  is_active = $10
+            where id = $1::uuid
+            returning id, service_id, name, summary, price_minor, currency, duration_hours::float8 as duration_hours,
+                      deliverables, is_featured, sort_order, is_active, created_at::text, updated_at::text`,
+          [
+            v.id,
+            v.service_id,
+            v.name,
+            v.summary ?? null,
+            v.price_minor,
+            v.duration_hours ?? null,
+            v.deliverables,
+            v.is_featured,
+            v.sort_order,
+            v.is_active,
+          ]
+        );
+        if (!res.rows[0]) {
+          throw new ProblemError(404, "not_found", "Package not found", "No package matches that ID.");
+        }
+        return res.rows[0];
+      }
+
       const res = await tx.query<PackageItem>(
-        `update packages
-            set service_id = $2::uuid,
-                name = $3,
-                summary = $4,
-                price_minor = $5,
-                duration_hours = $6,
-                deliverables = $7,
-                is_featured = $8,
-                sort_order = $9,
-                is_active = $10
-          where id = $1::uuid
-          returning id, service_id, name, summary, price_minor, currency, duration_hours::float8 as duration_hours,
-                    deliverables, is_featured, sort_order, is_active, created_at::text, updated_at::text`,
+        `insert into packages (service_id, name, summary, price_minor, duration_hours, deliverables, is_featured, sort_order, is_active)
+         values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+         returning id, service_id, name, summary, price_minor, currency, duration_hours::float8 as duration_hours,
+                   deliverables, is_featured, sort_order, is_active, created_at::text, updated_at::text`,
         [
-          v.id,
           v.service_id,
           v.name,
           v.summary ?? null,
@@ -186,30 +222,13 @@ export async function upsertAdminPackage(
           v.is_active,
         ]
       );
-      if (!res.rows[0]) {
-        throw new ProblemError(404, "not_found", "Package not found", "No package matches that ID.");
-      }
-      return res.rows[0];
+      return res.rows[0]!;
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        uniqueConflict: "A package with this identifier already exists.",
+        foreignKey: "Referenced service could not be found.",
+      });
     }
-
-    const res = await tx.query<PackageItem>(
-      `insert into packages (service_id, name, summary, price_minor, duration_hours, deliverables, is_featured, sort_order, is_active)
-       values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
-       returning id, service_id, name, summary, price_minor, currency, duration_hours::float8 as duration_hours,
-                 deliverables, is_featured, sort_order, is_active, created_at::text, updated_at::text`,
-      [
-        v.service_id,
-        v.name,
-        v.summary ?? null,
-        v.price_minor,
-        v.duration_hours ?? null,
-        v.deliverables,
-        v.is_featured,
-        v.sort_order,
-        v.is_active,
-      ]
-    );
-    return res.rows[0]!;
   });
 
   invalidateCache("catalog");
@@ -220,6 +239,7 @@ export async function upsertAdminPackage(
     revalidatePath("/services/videography");
     revalidatePath("/services/design");
     revalidatePath("/book");
+    revalidatePath("/sitemap.xml");
   } catch {
     // ignore outside request lifecycle
   }
@@ -232,11 +252,29 @@ export async function deleteAdminService(
   id: string
 ): Promise<void> {
   await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    // Delete associated packages first to satisfy foreign key constraint
-    await tx.query(`delete from packages where service_id = $1::uuid`, [id]);
-    const res = await tx.query(`delete from services where id = $1::uuid returning id`, [id]);
-    if (!res.rows[0]) {
-      throw new ProblemError(404, "not_found", "Service not found", "No service matches that ID.");
+    try {
+      const bookingRef = await tx.query<{ id: string }>(
+        `select id from bookings where service_id = $1::uuid limit 1`,
+        [id]
+      );
+      if (bookingRef.rows[0]) {
+        throw new ProblemError(
+          409,
+          "service_in_use",
+          "Service has existing bookings",
+          "Deactivate this service instead of deleting it so historical bookings remain intact."
+        );
+      }
+
+      await tx.query(`delete from packages where service_id = $1::uuid`, [id]);
+      const res = await tx.query(`delete from services where id = $1::uuid returning id`, [id]);
+      if (!res.rows[0]) {
+        throw new ProblemError(404, "not_found", "Service not found", "No service matches that ID.");
+      }
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        foreignKey: "This service is still referenced by existing records and cannot be deleted.",
+      });
     }
   });
 
@@ -244,8 +282,12 @@ export async function deleteAdminService(
   try {
     revalidatePath("/");
     revalidatePath("/services");
+    revalidatePath("/services/photography");
+    revalidatePath("/services/videography");
+    revalidatePath("/services/design");
     revalidatePath("/pricing");
     revalidatePath("/book");
+    revalidatePath("/sitemap.xml");
   } catch {
     // ignore outside request lifecycle
   }
@@ -256,9 +298,15 @@ export async function deleteAdminPackage(
   id: string
 ): Promise<void> {
   await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    const res = await tx.query(`delete from packages where id = $1::uuid returning id`, [id]);
-    if (!res.rows[0]) {
-      throw new ProblemError(404, "not_found", "Package not found", "No package matches that ID.");
+    try {
+      const res = await tx.query(`delete from packages where id = $1::uuid returning id`, [id]);
+      if (!res.rows[0]) {
+        throw new ProblemError(404, "not_found", "Package not found", "No package matches that ID.");
+      }
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        foreignKey: "This package is referenced by existing bookings and cannot be deleted.",
+      });
     }
   });
 
@@ -266,7 +314,11 @@ export async function deleteAdminPackage(
   try {
     revalidatePath("/pricing");
     revalidatePath("/services");
+    revalidatePath("/services/photography");
+    revalidatePath("/services/videography");
+    revalidatePath("/services/design");
     revalidatePath("/book");
+    revalidatePath("/sitemap.xml");
   } catch {
     // ignore outside request lifecycle
   }
@@ -319,6 +371,7 @@ export async function updateAdminSiteSettings(
   invalidateCache("catalog");
   try {
     revalidatePath("/", "layout");
+    revalidatePath("/sitemap.xml");
   } catch {
     // ignore outside request lifecycle
   }

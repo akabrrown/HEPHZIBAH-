@@ -1,16 +1,17 @@
 import crypto from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
+  claimTotpStep,
   generateTotpCode,
   hashPassword,
   isPasswordBreached,
   verifyPassword,
-  verifyTotpCode,
+  verifyTotpCodeWithStep,
   type AdminSessionPayload,
 } from "@/lib/auth";
 import { withAdminRole, withServiceRole } from "@/lib/db";
 import { ProblemError } from "@/lib/errors";
-import { checkSlidingWindowLimit } from "@/lib/rate-limit";
+import { checkSlidingWindowLimit, peekSlidingWindowLimit } from "@/lib/rate-limit";
 import {
   findAllTeamAdmins,
   findAuthAdminByEmail,
@@ -36,11 +37,28 @@ export async function authenticateAdminPassword(
   }
   const { email, password } = parsed.data;
 
-  // Rate limit: 5 failed attempts per account/source per 15 minutes (TDD 5.4)
+  // Rate limit: 5 failed attempts per account/source per 15 minutes
   const rateKey = `admin-signin:${email.toLowerCase()}:${sourceKey}`;
-  const limit = checkSlidingWindowLimit(`probe:${rateKey}`, 100, 15 * 60_000);
-  if (!limit.allowed) {
-    throw new ProblemError(429, "rate_limited", "Too many attempts", "Wait 15 minutes before trying again.");
+  const lockedState = peekSlidingWindowLimit(rateKey, 5, 15 * 60_000);
+  if (!lockedState.allowed) {
+    throw new ProblemError(
+      429,
+      "account_locked",
+      "Sign-in temporarily locked",
+      "Too many failed attempts. Wait 15 minutes and try again.",
+      { headers: { "Retry-After": String(lockedState.retryAfterSeconds) } }
+    );
+  }
+
+  const probeLimit = checkSlidingWindowLimit(`probe:${rateKey}`, 100, 15 * 60_000);
+  if (!probeLimit.allowed) {
+    throw new ProblemError(
+      429,
+      "rate_limited",
+      "Too many attempts",
+      "Wait 15 minutes before trying again.",
+      { headers: { "Retry-After": String(probeLimit.retryAfterSeconds) } }
+    );
   }
 
   const admin = await withServiceRole((tx) => findAuthAdminByEmail(tx, email));
@@ -66,7 +84,6 @@ export async function authenticateAdminPassword(
     aal: "aal1",
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
     jti: crypto.randomUUID(),
-    totpHint: admin.totp_secret ? generateTotpCode(admin.totp_secret) : undefined,
   };
 }
 
@@ -81,163 +98,203 @@ export async function verifyAdminTotpAndUpgradeSession(
     });
   }
 
+  const totpRateKey = `admin-totp-acct:${currentSession.adminId}`;
+  const lockedState = peekSlidingWindowLimit(totpRateKey, 5, 15 * 60_000);
+  if (!lockedState.allowed) {
+    throw new ProblemError(
+      429,
+      "totp_locked",
+      "Too many authenticator attempts",
+      "Wait 15 minutes before entering another authenticator code.",
+      { headers: { "Retry-After": String(lockedState.retryAfterSeconds) } }
+    );
+  }
+
   const admin = await withServiceRole((tx) => findAuthAdminById(tx, currentSession.adminId));
   if (!admin || !admin.is_active || !admin.totp_secret) {
     throw new ProblemError(403, "forbidden", "Authenticator not configured", "Ask the studio owner to reset your authenticator.");
   }
 
-  const ok = verifyTotpCode(admin.totp_secret, parsed.data.code);
-  if (!ok) {
+  const verified = verifyTotpCodeWithStep(admin.totp_secret, parsed.data.code);
+  if (!verified.valid) {
+    const failed = checkSlidingWindowLimit(totpRateKey, 5, 15 * 60_000);
+    if (!failed.allowed) {
+      throw new ProblemError(
+        429,
+        "totp_locked",
+        "Too many authenticator attempts",
+        "Wait 15 minutes before entering another authenticator code.",
+        { headers: { "Retry-After": String(failed.retryAfterSeconds) } }
+      );
+    }
     throw new ProblemError(401, "invalid_totp", "Incorrect authenticator code", "Check the 6-digit code in your authenticator app and try again.");
   }
 
+  if (!claimTotpStep(admin.id, verified.step)) {
+    throw new ProblemError(
+      401,
+      "totp_replayed",
+      "Authenticator code already used",
+      "Wait for the next 30-second code in your authenticator app and try again."
+    );
+  }
+
   return {
-    ...currentSession,
+    adminId: admin.id,
+    email: admin.email,
     displayName: admin.display_name,
     scopes: admin.scopes,
     aal: "aal2",
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
+    jti: crypto.randomUUID(),
   };
 }
 
 export async function getAdminDashboardSummary(admin: AdminSessionPayload) {
-  const summary = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    const canViewBookings = admin.scopes.includes("bookings");
+  const canViewBookings = admin.scopes.includes("bookings");
 
-    const needsReply = canViewBookings
-      ? (
-          await tx.query<{
+  const [summary, emailProblems] = await Promise.all([
+    withAdminRole(admin.adminId, admin.aal, async (tx) => {
+      const needsReply = canViewBookings
+        ? (
+            await tx.query<{
+              id: string;
+              reference: string;
+              kind: string;
+              client_name: string;
+              event_date: string | null;
+              deadline: string | null;
+              created_at: string;
+            }>(
+              `select id, reference, kind, client_name, event_date::text as event_date, deadline::text as deadline, created_at::text as created_at
+                 from bookings
+                where status = 'new'
+                order by created_at asc
+                limit 15`
+            )
+          ).rows
+        : [];
+
+      const quotesWaiting = canViewBookings
+        ? (
+            await tx.query<{
+              id: string;
+              reference: string;
+              client_name: string;
+              total_minor: number;
+              valid_until: string | null;
+            }>(
+              `select b.id, b.reference, b.client_name, q.total_minor, q.valid_until::text as valid_until
+                 from bookings b
+                 join quotes q on q.booking_id = b.id and q.status = 'sent'
+                where b.status = 'quoted'
+                order by q.valid_until asc nulls last
+                limit 15`
+            )
+          ).rows
+        : [];
+
+      const depositsAwaited = canViewBookings
+        ? (
+            await tx.query<{
+              id: string;
+              reference: string;
+              client_name: string;
+              event_date: string | null;
+              deposit_minor: number;
+            }>(
+              `select b.id, b.reference, b.client_name, b.event_date::text as event_date,
+                      coalesce(q.deposit_minor, 0) as deposit_minor
+                 from bookings b
+                 left join quotes q on q.id = b.accepted_quote_id
+                where b.status = 'accepted'
+                  and coalesce((
+                    select sum(case when p.is_refund then -p.amount_minor else p.amount_minor end)
+                      from payments p
+                     where p.booking_id = b.id
+                  ), 0) < coalesce(q.deposit_minor, 1)
+                order by b.updated_at asc
+                limit 15`
+            )
+          ).rows
+        : [];
+
+      const thisWeek = canViewBookings
+        ? (
+            await tx.query<{
+              id: string;
+              reference: string;
+              client_name: string;
+              kind: string;
+              venue_text: string | null;
+              venue_city: string | null;
+              starts_at: string | null;
+              ends_at: string | null;
+              event_date: string | null;
+              deadline: string | null;
+            }>(
+              `select id, reference, client_name, kind, venue_text, venue_city,
+                      starts_at::text as starts_at, ends_at::text as ends_at,
+                      event_date::text as event_date, deadline::text as deadline
+                 from bookings
+                where status = 'confirmed'
+                  and (
+                    (starts_at >= now() and starts_at <= now() + interval '7 days')
+                    or (event_date >= current_date and event_date <= current_date + 7)
+                    or (deadline >= current_date and deadline <= current_date + 7)
+                  )
+                order by coalesce(starts_at, event_date::timestamptz, deadline::timestamptz) asc`
+            )
+          ).rows
+        : [];
+
+      const medianFirstResponseHours = canViewBookings
+        ? (
+            await tx.query<{ median_hours: number | null }>(
+              `select round((percentile_cont(0.5) within group (
+                 order by extract(epoch from (first_ev.first_at - b.created_at)) / 3600.0
+               ))::numeric, 1)::float8 as median_hours
+                 from bookings b
+                 join lateral (
+                   select min(e.created_at) as first_at
+                     from booking_events e
+                    where e.booking_id = b.id
+                      and e.actor_type = 'admin'
+                 ) first_ev on first_ev.first_at is not null`
+            )
+          ).rows[0]?.median_hours ?? null
+        : null;
+
+      return {
+        needsReply,
+        quotesWaiting,
+        depositsAwaited,
+        thisWeek,
+        medianFirstResponseHours,
+      };
+    }),
+    canViewBookings
+      ? withServiceRole(async (svcTx) => {
+          const res = await svcTx.query<{
             id: string;
-            reference: string;
-            kind: string;
-            client_name: string;
-            event_date: string | null;
-            deadline: string | null;
+            to_email: string;
+            template: string;
+            status: string;
+            attempts: number;
+            last_error: string | null;
             created_at: string;
           }>(
-            `select id, reference, kind, client_name, event_date::text as event_date, deadline::text as deadline, created_at::text as created_at
-               from bookings
-              where status = 'new'
-              order by created_at asc
-              limit 15`
-          )
-        ).rows
-      : [];
-
-    const quotesWaiting = canViewBookings
-      ? (
-          await tx.query<{
-            id: string;
-            reference: string;
-            client_name: string;
-            total_minor: number;
-            valid_until: string | null;
-          }>(
-            `select b.id, b.reference, b.client_name, q.total_minor, q.valid_until::text as valid_until
-               from bookings b
-               join quotes q on q.booking_id = b.id and q.status = 'sent'
-              where b.status = 'quoted'
-              order by q.valid_until asc nulls last
-              limit 15`
-          )
-        ).rows
-      : [];
-
-    const depositsAwaited = canViewBookings
-      ? (
-          await tx.query<{
-            id: string;
-            reference: string;
-            client_name: string;
-            event_date: string | null;
-            deposit_minor: number;
-          }>(
-            `select b.id, b.reference, b.client_name, b.event_date::text as event_date,
-                    coalesce(q.deposit_minor, 0) as deposit_minor
-               from bookings b
-               left join quotes q on q.id = b.accepted_quote_id
-              where b.status = 'accepted'
-                and coalesce((
-                  select sum(case when p.is_refund then -p.amount_minor else p.amount_minor end)
-                    from payments p
-                   where p.booking_id = b.id
-                ), 0) < coalesce(q.deposit_minor, 1)
-              order by b.updated_at asc
-              limit 15`
-          )
-        ).rows
-      : [];
-
-    const thisWeek = canViewBookings
-      ? (
-          await tx.query<{
-            id: string;
-            reference: string;
-            client_name: string;
-            kind: string;
-            venue_text: string | null;
-            venue_city: string | null;
-            starts_at: string | null;
-            ends_at: string | null;
-          }>(
-            `select id, reference, client_name, kind, venue_text, venue_city,
-                    starts_at::text as starts_at, ends_at::text as ends_at
-               from bookings
-              where status = 'confirmed'
-                and (
-                  (starts_at >= now() and starts_at <= now() + interval '7 days')
-                  or (event_date >= current_date and event_date <= current_date + 7)
-                )
-              order by coalesce(starts_at, event_date::timestamptz) asc`
-          )
-        ).rows
-      : [];
-
-    const medianFirstResponseHours = canViewBookings
-      ? (
-          await tx.query<{ median_hours: number | null }>(
-            `select round((percentile_cont(0.5) within group (
-               order by extract(epoch from (first_ev.first_at - b.created_at)) / 3600.0
-             ))::numeric, 1)::float8 as median_hours
-               from bookings b
-               join lateral (
-                 select min(e.created_at) as first_at
-                   from booking_events e
-                  where e.booking_id = b.id
-                    and e.actor_type = 'admin'
-               ) first_ev on first_ev.first_at is not null`
-          )
-        ).rows[0]?.median_hours ?? null
-      : null;
-
-    return {
-      needsReply,
-      quotesWaiting,
-      depositsAwaited,
-      thisWeek,
-      medianFirstResponseHours,
-    };
-  });
-
-  const emailProblems = await withServiceRole(async (svcTx) => {
-    const res = await svcTx.query<{
-      id: string;
-      to_email: string;
-      template: string;
-      status: string;
-      attempts: number;
-      last_error: string | null;
-      created_at: string;
-    }>(
-      `select id, to_email::text as to_email, template, status, attempts, last_error, created_at::text as created_at
-         from email_outbox
-        where status in ('failed', 'dead')
-           or (status = 'pending' and created_at < now() - interval '30 minutes')
-        order by created_at desc
-        limit 20`
-    );
-    return res.rows;
-  });
+            `select id, to_email::text as to_email, template, status, attempts, last_error, created_at::text as created_at
+               from email_outbox
+              where status in ('failed', 'dead')
+                 or (status = 'pending' and created_at < now() - interval '30 minutes')
+              order by created_at desc
+              limit 20`
+          );
+          return res.rows;
+        })
+      : Promise.resolve([]),
+  ]);
 
   return {
     ...summary,
@@ -255,15 +312,22 @@ function generateBase32Secret(): string {
   return out;
 }
 
-function getSupabaseAdminClient() {
+declare global {
+  var __hephzibahSupabaseAdmin: SupabaseClient | undefined;
+}
+
+function getSupabaseAdminClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey || !process.env.DATABASE_URL || process.env.NODE_ENV === "test") {
     return null;
   }
-  return createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  if (!globalThis.__hephzibahSupabaseAdmin) {
+    globalThis.__hephzibahSupabaseAdmin = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+  return globalThis.__hephzibahSupabaseAdmin;
 }
 
 export async function listTeamAdmins(admin: AdminSessionPayload): Promise<AdminUserRecord[]> {
@@ -308,7 +372,17 @@ export async function createTeamAdmin(
     }
   });
 
+  const usingLivePostgres = Boolean(process.env.DATABASE_URL && process.env.NODE_ENV !== "test");
   const supabaseAdmin = getSupabaseAdminClient();
+  if (usingLivePostgres && !supabaseAdmin) {
+    throw new ProblemError(
+      503,
+      "auth_not_configured",
+      "Supabase Auth admin credentials missing",
+      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before creating team members."
+    );
+  }
+
   let userId: string = crypto.randomUUID();
   let createdInSupabase = false;
 
@@ -327,11 +401,19 @@ export async function createTeamAdmin(
           (u) => u.email?.toLowerCase() === normalizedEmail
         );
         if (existingAuthUser) {
-          await supabaseAdmin.auth.admin.updateUserById(existingAuthUser.id, {
+          const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(existingAuthUser.id, {
             password: v.password,
             email_confirm: true,
             user_metadata: { display_name: v.display_name },
           });
+          if (updateErr) {
+            throw new ProblemError(
+              500,
+              "auth_update_failed",
+              "Unable to update existing auth account",
+              updateErr.message
+            );
+          }
           userId = existingAuthUser.id;
         } else {
           throw new ProblemError(
@@ -363,14 +445,22 @@ export async function createTeamAdmin(
   }
 
   try {
+    // Write identity/scopes via RLS-enforced admin role, then store credential hashes via service role
     const created = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
       const res = await tx.query<AdminUserRecord>(
-        `insert into admin_users (id, email, password_hash, totp_secret, display_name, scopes, is_active)
-         values ($1::uuid, $2, $3, $4, $5, $6, true)
+        `insert into admin_users (id, email, display_name, scopes, is_active)
+         values ($1::uuid, $2, $3, $4, true)
          returning id, email, display_name, scopes, is_active, created_at::text as created_at`,
-        [userId, normalizedEmail, passwordHash, totpSecret, v.display_name, v.scopes]
+        [userId, normalizedEmail, v.display_name, v.scopes]
       );
       return res.rows[0]!;
+    });
+
+    await withServiceRole(async (svcTx) => {
+      await svcTx.query(
+        `update admin_users set password_hash = $2, totp_secret = $3 where id = $1::uuid`,
+        [userId, passwordHash, totpSecret]
+      );
     });
 
     return {
@@ -381,7 +471,7 @@ export async function createTeamAdmin(
   } catch (err) {
     if (supabaseAdmin && createdInSupabase) {
       await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => undefined);
-    } else {
+    } else if (!supabaseAdmin) {
       await withServiceRole(async (svcTx) => {
         await svcTx.query(`delete from auth.users where id = $1::uuid`, [userId]);
       }).catch(() => undefined);

@@ -78,22 +78,28 @@ export default async function ServicesHubPage() {
               <h2 className="mt-2 font-display text-2xl font-bold text-[var(--white)]">
                 {KIND_LABELS[kind]}
               </h2>
-              <ul className="mt-4 space-y-2.5 border-t border-[var(--hairline)] pt-4 flex-1">
-                {kindServices.map((svc) => (
-                  <li key={svc.id} className="flex items-baseline justify-between gap-3 text-sm">
-                    <Link
-                      href={`/book?kind=${kind}&service=${svc.id}`}
-                      className="text-[var(--white)] hover:text-[var(--cyan)] underline-offset-4 hover:underline"
-                    >
-                      {svc.name}
-                    </Link>
-                    {svc.starting_price_minor !== null && (
-                      <span className="font-mono-meta text-xs font-bold text-[var(--cyan)]">
-                        From {formatGhsFromMinor(svc.starting_price_minor)}
-                      </span>
-                    )}
+              <ul className="mt-4 space-y-1.5 border-t border-[var(--hairline)] pt-4 flex-1">
+                {kindServices.length === 0 ? (
+                  <li className="py-2 text-sm text-[var(--grey)]">
+                    Packages for this discipline are tailored on request.
                   </li>
-                ))}
+                ) : (
+                  kindServices.map((svc) => (
+                    <li key={svc.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <Link
+                        href={`/book?kind=${kind}&service=${svc.id}`}
+                        className="inline-flex min-h-[44px] items-center text-[var(--white)] hover:text-[var(--cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                      >
+                        {svc.name}
+                      </Link>
+                      {svc.starting_price_minor !== null && (
+                        <span className="font-mono-meta text-xs font-bold text-[var(--cyan)] shrink-0">
+                          From {formatGhsFromMinor(svc.starting_price_minor)}
+                        </span>
+                      )}
+                    </li>
+                  ))
+                )}
               </ul>
               <div className="mt-6">
                 <ButtonLink href={`/services/${kind}`} variant="secondary" className="w-full">
@@ -115,23 +121,29 @@ export default async function ServicesHubPage() {
           For funerals and memorials: we are here to document the day with care. Pick any occasion below to open the booking form with it ready.
         </p>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {occasions.map((occ) => {
-            const primaryKind = occ.applies_to[0] ?? "photography";
-            return (
-              <Link
-                key={occ.id}
-                href={`/book?kind=${primaryKind}&occasion=${occ.id}`}
-                className="group flex min-h-[56px] items-center justify-between border border-[var(--hairline)] bg-[var(--ink-2)] px-4 py-3 hover:border-[var(--cyan)] transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
-              >
-                <span className="font-medium text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">{occ.name}</span>
-                <span className="font-mono-meta text-xs uppercase text-[var(--grey)] group-hover:text-[var(--cyan)] transition-colors">
-                  {occ.applies_to.join(" · ")} &rarr;
-                </span>
-              </Link>
-            );
-          })}
-        </div>
+        {occasions.length === 0 ? (
+          <p className="mt-6 border border-[var(--hairline)] bg-[var(--ink-2)] p-6 text-sm text-[var(--grey)]">
+            No occasion presets listed right now. Choose any discipline above to start your booking brief.
+          </p>
+        ) : (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {occasions.map((occ) => {
+              const primaryKind = occ.applies_to[0] ?? "photography";
+              return (
+                <Link
+                  key={occ.id}
+                  href={`/book?kind=${primaryKind}&occasion=${occ.id}`}
+                  className="group flex min-h-[56px] items-center justify-between border border-[var(--hairline)] bg-[var(--ink-2)] px-4 py-3 hover:border-[var(--cyan)] transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                >
+                  <span className="font-medium text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">{occ.name}</span>
+                  <span className="font-mono-meta text-xs uppercase text-[var(--grey)] group-hover:text-[var(--cyan)] transition-colors">
+                    {occ.applies_to.join(" · ")} &rarr;
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

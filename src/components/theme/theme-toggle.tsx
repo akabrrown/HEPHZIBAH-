@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import { twMerge } from "tailwind-merge";
 
 export function ThemeToggle({
   className = "",
@@ -15,13 +16,20 @@ export function ThemeToggle({
 
   useEffect(() => {
     setMounted(true);
-    const current = document.documentElement.getAttribute("data-theme") as "dark" | "light" | null;
-    if (current === "light" || current === "dark") {
-      setTheme(current);
-    } else {
-      const prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
-      setTheme(prefersLight ? "light" : "dark");
-    }
+    const syncTheme = () => {
+      const current = document.documentElement.getAttribute("data-theme") as "dark" | "light" | null;
+      if (current === "light" || current === "dark") {
+        setTheme(current);
+      } else {
+        const prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+        setTheme(prefersLight ? "light" : "dark");
+      }
+    };
+    syncTheme();
+    window.addEventListener("hephzibah-theme-change", syncTheme);
+    return () => {
+      window.removeEventListener("hephzibah-theme-change", syncTheme);
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -40,6 +48,7 @@ export function ThemeToggle({
     } catch {
       // localStorage may fail in restricted/private contexts
     }
+    window.dispatchEvent(new Event("hephzibah-theme-change"));
   };
 
   const isLight = theme === "light";
@@ -48,7 +57,10 @@ export function ThemeToggle({
     // Avoid hydration layout shift
     return (
       <div
-        className={`h-10 w-10 min-h-[44px] min-w-[44px] rounded-[2px] border border-[var(--hairline)] bg-[var(--ink-2)]/60 opacity-60 ${className}`}
+        className={twMerge(
+          "h-10 w-10 min-h-[44px] min-w-[44px] rounded-[2px] border border-[var(--hairline)] bg-[var(--ink-2)]/60 opacity-60",
+          className
+        )}
         aria-hidden="true"
       />
     );
@@ -62,16 +74,19 @@ export function ThemeToggle({
       aria-checked={isLight}
       aria-label={isLight ? "Switch to dark studio theme" : "Switch to light gallery theme"}
       title={isLight ? "Switch to Dark Theme" : "Switch to Light Theme"}
-      className={`group relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-[2px] border border-[var(--control-border)] bg-[var(--ink-2)] px-3 py-2 text-xs font-mono font-bold tracking-wider text-[var(--white)] transition-colors hover:border-[var(--cyan)] hover:text-[var(--cyan)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)] cursor-pointer ${className}`}
+      className={twMerge(
+        "group relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-[2px] border border-[var(--control-border)] bg-[var(--ink-2)] px-3 py-2 text-xs font-mono font-bold tracking-wider text-[var(--white)] transition-colors hover:border-[var(--cyan)] hover:text-[var(--cyan)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)] cursor-pointer",
+        className
+      )}
     >
       {isLight ? (
         <>
-          <Moon className="h-4 w-4 shrink-0 text-[var(--cyan)] transition-transform group-hover:-rotate-12" aria-hidden="true" />
+          <Moon className="h-4 w-4 shrink-0 text-current transition-transform group-hover:-rotate-12" aria-hidden="true" />
           {showLabel && <span className="uppercase">Dark Mode</span>}
         </>
       ) : (
         <>
-          <Sun className="h-4 w-4 shrink-0 text-[var(--cyan)] transition-transform group-hover:rotate-45" aria-hidden="true" />
+          <Sun className="h-4 w-4 shrink-0 text-current transition-transform group-hover:rotate-45" aria-hidden="true" />
           {showLabel && <span className="uppercase">Light Mode</span>}
         </>
       )}

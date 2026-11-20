@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PGlite } from "@electric-sql/pglite";
 import type { AdminSessionPayload } from "@/lib/auth";
 import { createFreshTestDb, setTestDbInstance, withServiceRole } from "@/lib/db";
 import { DEFAULT_OWNER_ID } from "@/lib/seed-data";
@@ -21,15 +22,17 @@ import {
   sendQuoteAdmin,
   upsertDraftQuoteAdmin,
 } from "@/modules/quoting/service";
+import { cancelBookingByClient } from "@/modules/booking/service";
 
 describe("Full booking, quoting, outbox retry, and portfolio lifecycle", () => {
+  let db: PGlite;
   let ownerSession: AdminSessionPayload;
   let photoServiceId: string;
   let weddingOccasionId: string;
   let designServiceId: string;
 
   beforeAll(async () => {
-    const db = await createFreshTestDb();
+    db = await createFreshTestDb();
     setTestDbInstance(db);
     ownerSession = {
       adminId: DEFAULT_OWNER_ID,
@@ -107,6 +110,7 @@ describe("Full booking, quoting, outbox retry, and portfolio lifecycle", () => {
     );
     expect(replay.isReplay).toBe(true);
     expect(replay.reference).toBe(first.reference);
+    expect(replay.statusUrl).toBe("");
 
     // Search by last 4 digits of phone ("0199") finds booking (FR-32)
     const searchRes = await listBookingsForAdmin(ownerSession, { q: "0199" });
@@ -298,5 +302,50 @@ describe("Full booking, quoting, outbox retry, and portfolio lifecycle", () => {
         status: "published",
       })
     ).rejects.toThrow(/consent/i);
+  });
+
+  it("enforces 90-day client token expiry on cancel and quote accept", async () => {
+    const aged = await submitBookingRequest({
+      kind: "design",
+      serviceId: designServiceId,
+      deadline: "2027-10-15",
+      brief: "Corporate brochure and annual report editorial layout.",
+      clientName: "Kwame Nkrumah-Mensah",
+      clientEmail: "kwame.expiry@ghana.example",
+      clientPhone: "024 888 7766",
+      preferredContact: "email",
+      consentAccepted: true,
+      privacyVersion: "1.0",
+      termsVersion: "1.0",
+    });
+
+    const rawToken = new URL(`http://localhost${aged.statusUrl}`).searchParams.get("t")!;
+    const list = await listBookingsForAdmin(ownerSession, { q: aged.reference });
+    const bookingId = list.items[0]!.id;
+    const draft = await upsertDraftQuoteAdmin(ownerSession, bookingId, {
+      items: [{ description: "Editorial layout", quantity: 1, unit_price_minor: 180000 }],
+      deposit_minor: 90000,
+    });
+    const sent = await sendQuoteAdmin(ownerSession, bookingId, draft.id);
+
+    await db.transaction(async (tx) => {
+      await tx.exec(`alter table bookings disable trigger bookings_updated`);
+      try {
+        await tx.query(
+          `update bookings set updated_at = now() - interval '91 days' where id = $1::uuid`,
+          [bookingId]
+        );
+      } finally {
+        await tx.exec(`alter table bookings enable trigger bookings_updated`);
+      }
+    });
+
+    await expect(
+      acceptQuoteByClient(aged.reference, rawToken, { quoteId: sent.id })
+    ).rejects.toThrow(/Invalid or expired status link/i);
+
+    await expect(
+      cancelBookingByClient(aged.reference, rawToken, { reason: "Plans changed" })
+    ).rejects.toThrow(/Invalid or expired status link/i);
   });
 });

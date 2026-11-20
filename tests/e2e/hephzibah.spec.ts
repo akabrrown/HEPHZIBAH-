@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
-const SEED_ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "Hephzibah#2026!Accra";
-const OWNER_EMAIL = "owner@hephzibahmedia.com";
-const OWNER_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
-const CONTENT_EMAIL = "content@hephzibahmedia.com";
-const CONTENT_TOTP_SECRET = "KRSXG5CTMVRXEZLU";
+const SEED_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "";
+const OWNER_EMAIL = process.env.E2E_OWNER_EMAIL ?? "owner@hephzibahmedia.com";
+const OWNER_TOTP_SECRET = process.env.E2E_OWNER_TOTP_SECRET ?? "";
+const CONTENT_EMAIL = process.env.E2E_CONTENT_EMAIL ?? "content@hephzibahmedia.com";
+const CONTENT_TOTP_SECRET = process.env.E2E_CONTENT_TOTP_SECRET ?? "";
 
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -128,6 +128,10 @@ test.describe("Hephzibah Media End-to-End Verification", () => {
     page,
     request,
   }, testInfo) => {
+    test.skip(
+      !SEED_ADMIN_PASSWORD || !OWNER_TOTP_SECRET || !CONTENT_TOTP_SECRET,
+      "Set E2E_ADMIN_PASSWORD, E2E_OWNER_TOTP_SECRET, and E2E_CONTENT_TOTP_SECRET to run full admin E2E"
+    );
     test.setTimeout(90_000);
     const runTag = `${testInfo.project.name}-${Date.now().toString().slice(-5)}`;
     const dayPickIndex = testInfo.project.name === "desktop" ? 0 : 3;

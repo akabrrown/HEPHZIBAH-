@@ -1,16 +1,52 @@
+import crypto from "node:crypto";
+
 export const DEFAULT_OWNER_ID = "11111111-1111-4111-8111-111111111111";
 export const DEFAULT_CONTENT_ADMIN_ID = "22222222-2222-4222-8222-222222222222";
 export const DEFAULT_BOOKINGS_ADMIN_ID = "33333333-3333-4333-8333-333333333333";
-export const DEFAULT_AKAYETB_ADMIN_ID = "44444444-4444-4444-8444-444444444444";
 
-// Known RFC 6238 base32 secrets for local seeded admin accounts (overridden in production via team setup)
-export const SEED_OWNER_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
-export const SEED_CONTENT_TOTP_SECRET = "KRSXG5CTMVRXEZLU";
-export const SEED_BOOKINGS_TOTP_SECRET = "MFRGGZDFMZTWQ2LK";
-export const SEED_AKAYETB_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
+function generateEphemeralBase32(bytesLen = 10): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const bytes = crypto.randomBytes(bytesLen);
+  let out = "";
+  for (const b of bytes) {
+    out += alphabet[b % alphabet.length] ?? "A";
+  }
+  return out;
+}
 
-export const SEED_ADMIN_PASSWORD =
-  process.env.SEED_ADMIN_PASSWORD ?? "Hephzibah#2026!Accra";
+declare global {
+  var __hephzibahEphemeralSeedPass: string | undefined;
+  var __hephzibahEphemeralSeedTotp: Record<string, string> | undefined;
+}
+
+/**
+ * Reads local dev/test admin password from environment or generates a process-scoped
+ * ephemeral random string. Never returns a hardcoded repository credential.
+ */
+export function getSeedAdminPassword(): string {
+  const fromEnv = process.env.SEED_ADMIN_PASSWORD?.trim();
+  if (fromEnv) return fromEnv;
+  if (!globalThis.__hephzibahEphemeralSeedPass) {
+    globalThis.__hephzibahEphemeralSeedPass = `Ephemeral#${crypto.randomBytes(12).toString("base64url")}`;
+  }
+  return globalThis.__hephzibahEphemeralSeedPass;
+}
+
+/**
+ * Reads local dev/test TOTP base32 secret from envKey or generates a process-scoped
+ * ephemeral base32 secret. Zero static TOTP secrets are committed to source.
+ */
+export function getSeedTotpSecret(envKey: string): string {
+  const fromEnv = process.env[envKey]?.trim();
+  if (fromEnv) return fromEnv;
+  if (!globalThis.__hephzibahEphemeralSeedTotp) {
+    globalThis.__hephzibahEphemeralSeedTotp = {};
+  }
+  if (!globalThis.__hephzibahEphemeralSeedTotp[envKey]) {
+    globalThis.__hephzibahEphemeralSeedTotp[envKey] = generateEphemeralBase32(10);
+  }
+  return globalThis.__hephzibahEphemeralSeedTotp[envKey]!;
+}
 
 export const EXTRA_SEED_SQL = `
 -- Seed default site settings (id = 1 singleton)
@@ -24,7 +60,7 @@ insert into site_settings (
   '+233240000000',
   '+233302000000',
   'Ring Road Central, Accra, Ghana',
-  '{"instagram":"https://www.instagram.com/hephzibahphotography_","tiktok":"https://www.tiktok.com/@hephzibah_photography?_r=1&_t=ZS-9BTfXSCc6bf","youtube":"https://youtube.com/@hephzibahmedia","momo_number":"024 000 0000 (Hephzibah Media Ltd)","bank_details":"GCB Bank — Ring Road Central Branch — Account 1011200004591"}'::jsonb,
+  '{"instagram":"https://www.instagram.com/hephzibahphotography_","tiktok":"https://www.tiktok.com/@hephzibah_photography?_r=1&_t=ZS-9BTfXSCc6bf","youtube":"https://youtube.com/@hephzibahmedia","momo_number":"","bank_details":""}'::jsonb,
   3,
   540,
   7,

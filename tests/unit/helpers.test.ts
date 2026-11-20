@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   addDaysIso,
@@ -13,7 +14,10 @@ import {
   safeCompare,
 } from "@/lib/tokens";
 import { generateTotpCode, verifyTotpCode } from "@/lib/auth";
+import { resolveImageUrl } from "@/lib/media";
 import { canTransitionBooking } from "@/modules/booking/schema";
+import { verifyBookingAccessToken } from "@/modules/booking/service";
+import { mediaAssetPatchSchema } from "@/modules/portfolio/schema";
 import { sanitizeCsvCell } from "@/lib/csv";
 
 describe("money helpers", () => {
@@ -60,13 +64,16 @@ describe("tokens and TOTP verification", () => {
   });
 
   it("validates RFC 6238 TOTP codes across drift tolerance", () => {
-    const secret = "JBSWY3DPEHPK3PXP";
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const bytes = crypto.randomBytes(16);
+    const secret = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
     const now = 1763360000000;
     const code = generateTotpCode(secret, now);
     expect(code).toMatch(/^\d{6}$/);
     expect(verifyTotpCode(secret, code, now)).toBe(true);
     expect(verifyTotpCode(secret, code, now + 29_000)).toBe(true);
-    expect(verifyTotpCode(secret, "000000", now)).toBe(false);
+    const wrongCode = code === "000000" ? "000001" : "000000";
+    expect(verifyTotpCode(secret, wrongCode, now)).toBe(false);
   });
 });
 
@@ -83,5 +90,37 @@ describe("state machine and CSV injection guards", () => {
     expect(sanitizeCsvCell("=cmd|' /C calc'!A0")).toBe('"\'=cmd|\' /C calc\'!A0"');
     expect(sanitizeCsvCell("+233240000000")).toBe('"\'+233240000000"');
     expect(sanitizeCsvCell("Normal Venue")).toBe('"Normal Venue"');
+  });
+});
+
+describe("media helpers and booking token verification", () => {
+  it("transforms Cloudinary HTTPS URLs with f_auto,q_auto and optional width without duplicating transforms", () => {
+    const rawUrl = "https://res.cloudinary.com/demo/image/upload/v123/hephzibah/sample.jpg";
+    expect(resolveImageUrl(rawUrl, { width: 600 })).toBe(
+      "https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_600,c_limit,v123/hephzibah/sample.jpg"
+    );
+    const alreadyTransformed =
+      "https://res.cloudinary.com/demo/image/upload/f_auto,q_auto/v123/sample.jpg";
+    expect(resolveImageUrl(alreadyTransformed, { width: 600 })).toBe(alreadyTransformed);
+    expect(resolveImageUrl("//evil.example/redirect.jpg")).toBe("/media/fallback-frame.svg");
+    expect(resolveImageUrl("local/sample")).toBe("/media/sample.svg");
+  });
+
+  it("validates partial media asset patches and rejects blank alt_text", () => {
+    expect(mediaAssetPatchSchema.safeParse({ is_cover: true }).success).toBe(true);
+    expect(mediaAssetPatchSchema.safeParse({ position: 2, caption: null }).success).toBe(true);
+    expect(mediaAssetPatchSchema.safeParse({ alt_text: "   " }).success).toBe(false);
+  });
+
+  it("enforces token length, revocation status, and 90-day inactivity expiry", () => {
+    const raw = generateAccessToken();
+    const hash = hashAccessToken(raw);
+    const recent = new Date().toISOString();
+    const expired = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
+
+    expect(verifyBookingAccessToken({ access_token_hash: hash, updated_at: recent }, raw)).toBe(true);
+    expect(verifyBookingAccessToken({ access_token_hash: hash, updated_at: recent }, "short")).toBe(false);
+    expect(verifyBookingAccessToken({ access_token_hash: "revoked", updated_at: recent }, raw)).toBe(false);
+    expect(verifyBookingAccessToken({ access_token_hash: hash, updated_at: expired }, raw)).toBe(false);
   });
 });

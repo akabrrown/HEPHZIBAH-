@@ -114,7 +114,7 @@ export function SettingsClient({
             .filter(Boolean),
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not update studio settings.") });
         return;
@@ -146,15 +146,19 @@ export function SettingsClient({
           summary_of_changes: legalSummary.trim() || null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
         setBanner({ kind: "err", text: readErrorMessage(data, "Could not publish legal document.") });
         return;
       }
       const listRes = await fetch("/api/admin/legal-documents", { cache: "no-store" });
       if (listRes.ok) {
-        const listData = (await listRes.json()) as { documents: LegalDocumentRecord[] };
-        setLegalDocs(listData.documents);
+        const listData = (await listRes.json().catch(() => null)) as {
+          documents?: LegalDocumentRecord[];
+        } | null;
+        if (listData?.documents) {
+          setLegalDocs(listData.documents);
+        }
       }
       setLegalVersion("");
       setLegalTitle("");
@@ -221,21 +225,34 @@ export function SettingsClient({
             />
           </FormField>
 
-          <FormField label="WhatsApp (E.164)" id="set-wa" required>
+          <FormField
+            label="WhatsApp (E.164)"
+            id="set-wa"
+            required
+            helpText="Use international E.164 format, e.g. +233240000000."
+          >
             <input
               id="set-wa"
               type="tel"
               required
+              pattern="^\+[1-9][0-9]{7,14}$"
+              placeholder="+233240000000"
               className={`${INPUT_CLASSES} font-mono-meta`}
               value={whatsappE164}
               onChange={(e) => setWhatsappE164(e.target.value)}
             />
           </FormField>
 
-          <FormField label="Voice phone (E.164)" id="set-phone">
+          <FormField
+            label="Voice phone (E.164)"
+            id="set-phone"
+            helpText="Optional international E.164 format, e.g. +233300000000."
+          >
             <input
               id="set-phone"
               type="tel"
+              pattern="^\+[1-9][0-9]{7,14}$"
+              placeholder="+233300000000"
               className={`${INPUT_CLASSES} font-mono-meta`}
               value={phoneE164}
               onChange={(e) => setPhoneE164(e.target.value)}
@@ -394,6 +411,7 @@ export function SettingsClient({
                 id="leg-ver"
                 type="text"
                 required
+                maxLength={30}
                 className={`${INPUT_CLASSES} font-mono-meta`}
                 value={legalVersion}
                 onChange={(e) => setLegalVersion(e.target.value)}
@@ -457,37 +475,45 @@ export function SettingsClient({
 
         <div className="space-y-3">
           <h2 className="font-display text-xl font-bold">Published versions history ({legalDocs.length})</h2>
-          {legalDocs.map((doc) => (
-            <article
-              key={doc.id}
-              className="space-y-2 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 font-mono-meta text-xs">
-                <span className="text-[var(--cyan)]">
-                  /{doc.slug} · v{doc.version}
-                </span>
-                <span className="text-[var(--grey)]">
-                  Effective {formatAccraDateTime(doc.effective_at)}
-                </span>
-              </div>
-              <h3 className="font-display text-base font-bold">{doc.title}</h3>
-              {doc.summary_of_changes && (
-                <p className="text-xs text-[var(--grey)]">{doc.summary_of_changes}</p>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setLegalSlug(doc.slug);
-                  setLegalTitle(doc.title);
-                  setLegalBody(doc.body_md);
-                  setLegalVersion(`${doc.version}.1`);
-                }}
-                className="min-h-[44px] text-xs text-[var(--cyan)] underline underline-offset-4 cursor-pointer"
+          {legalDocs.length === 0 ? (
+            <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-6 text-sm text-[var(--grey)]">
+              No published legal document versions recorded yet.
+            </div>
+          ) : (
+            legalDocs.map((doc) => (
+              <article
+                key={doc.id}
+                className="space-y-2 border border-[var(--hairline)] bg-[var(--ink-2)] p-4"
               >
-                Load into editor as new draft
-              </button>
-            </article>
-          ))}
+                <div className="flex flex-wrap items-center justify-between gap-2 font-mono-meta text-xs">
+                  <span className="text-[var(--cyan)]">
+                    /{doc.slug} · v{doc.version}
+                  </span>
+                  <span className="text-[var(--grey)]">
+                    Effective {formatAccraDateTime(doc.effective_at)}
+                  </span>
+                </div>
+                <h3 className="font-display text-base font-bold">{doc.title}</h3>
+                {doc.summary_of_changes && (
+                  <p className="text-xs text-[var(--grey)]">{doc.summary_of_changes}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVersion = `${doc.version}.1`;
+                    setLegalSlug(doc.slug);
+                    setLegalTitle(doc.title);
+                    setLegalBody(doc.body_md);
+                    setLegalVersion(nextVersion.length <= 30 ? nextVersion : doc.version.slice(0, 30));
+                    setLegalSummary("");
+                  }}
+                  className="min-h-[44px] text-xs text-[var(--cyan)] underline underline-offset-4 cursor-pointer"
+                >
+                  Load into editor as new draft
+                </button>
+              </article>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ export function EnquiriesClient({ initialItems }: { initialItems: EnquiryRecord[
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const visibleItems =
     statusFilter === "all" ? items : items.filter((item) => item.status === statusFilter);
@@ -23,19 +24,25 @@ export function EnquiriesClient({ initialItems }: { initialItems: EnquiryRecord[
   async function updateStatus(id: string, status: EnquiryStatus) {
     setBusyId(id);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch("/api/admin/enquiries", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError((data as { detail?: string }).detail ?? "Could not update enquiry status.");
+        setError((data as { detail?: string } | null)?.detail ?? "Could not update enquiry status.");
+        return;
+      }
+      if (!data) {
+        setError("Unexpected empty response while updating enquiry.");
         return;
       }
       const updated = data as EnquiryRecord;
       setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+      setSuccess(`Enquiry from ${updated.name} marked as ${updated.status}.`);
       router.refresh();
     } catch {
       setError("Network error updating enquiry status.");
@@ -77,6 +84,12 @@ export function EnquiriesClient({ initialItems }: { initialItems: EnquiryRecord[
       {error && (
         <div role="alert" className="border border-[var(--red)] bg-[var(--ink-2)] p-3 text-sm text-[var(--red)]">
           {error}
+        </div>
+      )}
+
+      {success && (
+        <div role="status" className="border border-[var(--cyan)] bg-[var(--ink-2)] p-3 text-sm text-[var(--cyan)]">
+          {success}
         </div>
       )}
 

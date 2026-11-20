@@ -3,9 +3,10 @@
 import { AlertCircle, Check, CheckCircle2, Clock, Copy, Download, ExternalLink, KeyRound, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FormField, TEXTAREA_CLASSES } from "@/components/ui/form-field";
+import { OfflineBanner } from "@/components/ui/offline-banner";
 import { ShotCaption } from "@/components/ui/viewfinder";
 import {
   buildWhatsAppUrl,
@@ -32,21 +33,43 @@ export function ClientBookingStatusClient({
   const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedPin, setCopiedPin] = useState(false);
+  const linkTimerRef = useRef<number | null>(null);
+  const pinTimerRef = useRef<number | null>(null);
 
-  function handleCopy(text: string, type: "link" | "pin") {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(text);
+  useEffect(() => {
+    return () => {
+      if (linkTimerRef.current !== null) window.clearTimeout(linkTimerRef.current);
+      if (pinTimerRef.current !== null) window.clearTimeout(pinTimerRef.current);
+    };
+  }, []);
+
+  async function handleCopy(text: string, type: "link" | "pin") {
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(text);
+      setFeedbackError(null);
       if (type === "link") {
         setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 2500);
+        if (linkTimerRef.current !== null) window.clearTimeout(linkTimerRef.current);
+        linkTimerRef.current = window.setTimeout(() => setCopiedLink(false), 2500);
       } else {
         setCopiedPin(true);
-        setTimeout(() => setCopiedPin(false), 2500);
+        if (pinTimerRef.current !== null) window.clearTimeout(pinTimerRef.current);
+        pinTimerRef.current = window.setTimeout(() => setCopiedPin(false), 2500);
       }
+    } catch {
+      setFeedbackSuccess(null);
+      setFeedbackError("Could not copy automatically. Please highlight and copy it manually.");
     }
   }
 
   const { booking, events, activeQuote, payments, settings } = data;
+  const safeGalleryUrl =
+    booking.gallery_url && /^https?:\/\//i.test(booking.gallery_url.trim())
+      ? booking.gallery_url.trim()
+      : null;
 
   const waUrl = buildWhatsAppUrl(
     settings.whatsapp_e164,
@@ -68,17 +91,21 @@ export function ClientBookingStatusClient({
   );
 
   async function refreshStatus() {
-    const res = await fetch(
-      `/api/bookings/${encodeURIComponent(booking.reference)}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
+    try {
+      const res = await fetch(
+        `/api/bookings/${encodeURIComponent(booking.reference)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }
+      );
+      if (res.ok) {
+        const updated = (await res.json()) as ClientBookingStatusView;
+        setData(updated);
+      } else {
+        router.refresh();
       }
-    );
-    if (res.ok) {
-      const updated = (await res.json()) as ClientBookingStatusView;
-      setData(updated);
-    } else {
+    } catch {
       router.refresh();
     }
   }
@@ -173,6 +200,8 @@ export function ClientBookingStatusClient({
         </p>
       </header>
 
+      <OfflineBanner />
+
       {feedbackError && (
         <div role="alert" className="border-2 border-[var(--red)] bg-[var(--ink-2)] p-4 text-sm text-[var(--red)] flex items-start gap-2.5">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
@@ -191,32 +220,38 @@ export function ClientBookingStatusClient({
         {/* Left: Status Timeline */}
         <section className="lg:col-span-5 space-y-4">
           <h2 className="font-display text-xl font-bold">Timeline</h2>
-          <ol className="space-y-4 border-l-2 border-[var(--hairline)] pl-4">
-            {events.map((ev, idx) => {
-              const isLatest = idx === events.length - 1;
-              return (
-                <li key={ev.id} className="relative">
-                  <span
-                    aria-hidden="true"
-                    className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ${
-                      isLatest ? "bg-[var(--white)] ring-2 ring-[var(--white)]/20" : "bg-[var(--control-border)]"
-                    }`}
-                  />
-                  <p className="font-mono-meta text-xs text-[var(--grey)]">
-                    {formatAccraDateTime(ev.created_at)}
-                  </p>
-                  <p className="text-sm font-semibold text-[var(--white)]">
-                    {ev.to_status
-                      ? ev.to_status.charAt(0).toUpperCase() + ev.to_status.slice(1)
-                      : ev.event_type.replace(/_/g, " ")}
-                  </p>
-                  {ev.note && (
-                    <p className="mt-0.5 text-xs text-[var(--grey)]">{ev.note}</p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+          {events.length === 0 ? (
+            <p className="border border-[var(--hairline)] bg-[var(--ink-2)] p-4 text-sm text-[var(--grey)]">
+              No timeline updates recorded yet.
+            </p>
+          ) : (
+            <ol className="space-y-4 border-l-2 border-[var(--hairline)] pl-4">
+              {events.map((ev, idx) => {
+                const isLatest = idx === events.length - 1;
+                return (
+                  <li key={ev.id} className="relative">
+                    <span
+                      aria-hidden="true"
+                      className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ${
+                        isLatest ? "bg-[var(--white)] ring-2 ring-[var(--white)]/20" : "bg-[var(--control-border)]"
+                      }`}
+                    />
+                    <p className="font-mono-meta text-xs text-[var(--grey)]">
+                      {formatAccraDateTime(ev.created_at)}
+                    </p>
+                    <p className="text-sm font-semibold text-[var(--white)]">
+                      {ev.to_status
+                        ? ev.to_status.charAt(0).toUpperCase() + ev.to_status.slice(1)
+                        : ev.event_type.replace(/_/g, " ")}
+                    </p>
+                    {ev.note && (
+                      <p className="mt-0.5 text-xs text-[var(--grey)]">{ev.note}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
 
           <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-4 space-y-3">
             <h3 className="font-display text-base font-bold">Need a change?</h3>
@@ -239,7 +274,7 @@ export function ClientBookingStatusClient({
         {/* Right: Active Quote, Deposit Instructions & Actions */}
         <section className="lg:col-span-7 space-y-6">
           {/* DEDICATED GALLERY DOWNLOAD CARD */}
-          {(booking.gallery_url || booking.status === "completed") && (
+          {(safeGalleryUrl || booking.status === "completed") && (
             <div className="relative border-2 border-[var(--cyan)] bg-[var(--ink-2)] p-6 sm:p-8 space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] pb-4">
                 <span className="font-mono text-xs font-black uppercase tracking-widest text-[var(--cyan)]">
@@ -257,17 +292,22 @@ export function ClientBookingStatusClient({
                 <p className="mt-1 text-sm text-[var(--grey)] leading-relaxed">
                   Full-resolution edited photographs, master video exports, and print-ready files from your session.
                 </p>
+                {booking.gallery_expires_at && (
+                  <p className="mt-2 font-mono-meta text-xs text-[var(--cyan)]">
+                    Available until {formatDisplayDate(booking.gallery_expires_at)}
+                  </p>
+                )}
               </div>
 
-              {booking.gallery_url ? (
+              {safeGalleryUrl ? (
                 <div className="space-y-4">
                   {/* Primary CTA + Copy Button */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
                     <a
-                      href={booking.gallery_url}
+                      href={safeGalleryUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex min-h-[50px] flex-1 items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-6 py-3 font-display text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] hover:brightness-110 active:scale-[0.98] transition-colors cursor-pointer"
+                      className="inline-flex min-h-[50px] flex-1 items-center justify-center gap-2.5 rounded-[2px] border-2 border-[var(--cyan)] bg-[var(--cyan)] px-6 py-3 font-display text-sm font-extrabold uppercase tracking-wider text-[var(--btn-action-text)] hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] transition-colors cursor-pointer"
                     >
                       <Download className="h-5 w-5 stroke-[2.5]" aria-hidden="true" />
                       <span>Download Studio Gallery</span>
@@ -276,17 +316,17 @@ export function ClientBookingStatusClient({
 
                     <button
                       type="button"
-                      onClick={() => handleCopy(booking.gallery_url!, "link")}
-                      className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-[2px] border-2 border-[var(--hairline)] bg-[var(--black)] px-5 py-3 font-mono text-xs font-bold uppercase tracking-wider text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] transition-all cursor-pointer active:scale-[0.98]"
+                      onClick={() => handleCopy(safeGalleryUrl, "link")}
+                      className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-[2px] border-2 border-[var(--hairline)] bg-[var(--black)] px-5 py-3 font-mono text-xs font-bold uppercase tracking-wider text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] transition-all cursor-pointer active:scale-[0.98]"
                     >
                       {copiedLink ? (
                         <>
-                          <Check className="h-4 w-4 text-[var(--cyan)]" />
+                          <Check className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
                           <span className="text-[var(--cyan)]">Copied!</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-4 w-4" aria-hidden="true" />
                           <span>Copy Link</span>
                         </>
                       )}
@@ -297,7 +337,7 @@ export function ClientBookingStatusClient({
                   {booking.gallery_pin && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-[2px] border border-[var(--cyan)]/40 bg-[var(--black)] p-4">
                       <div className="flex items-center gap-3">
-                        <KeyRound className="h-4 w-4 text-[var(--cyan)] shrink-0" />
+                        <KeyRound className="h-4 w-4 text-[var(--cyan)] shrink-0" aria-hidden="true" />
                         <div>
                           <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--grey)]">
                             Gallery Access PIN / Password
@@ -310,7 +350,7 @@ export function ClientBookingStatusClient({
                       <button
                         type="button"
                         onClick={() => handleCopy(booking.gallery_pin!, "pin")}
-                        className="font-mono text-xs font-bold text-[var(--cyan)] hover:underline cursor-pointer"
+                        className="inline-flex min-h-[44px] items-center px-3 font-mono text-xs font-bold text-[var(--cyan)] hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] cursor-pointer"
                       >
                         {copiedPin ? "PIN Copied!" : "Copy PIN"}
                       </button>
@@ -478,16 +518,32 @@ export function ClientBookingStatusClient({
               ) : (
                 <div className="space-y-2 text-sm text-[var(--grey)]">
                   <p className="text-[var(--white)]">
-                    Send your deposit using either option below, then share the transaction reference on WhatsApp so we confirm your date.
+                    Send your deposit using the studio payment details below, then share the transaction reference on WhatsApp so we confirm your date.
                   </p>
-                  <p>
-                    <strong className="text-[var(--white)]">Mobile Money:</strong>{" "}
-                    {settings.social.momo_number ?? settings.whatsapp_e164}
-                  </p>
+                  {settings.social.momo_number && (
+                    <p>
+                      <strong className="text-[var(--white)]">Mobile Money:</strong>{" "}
+                      {settings.social.momo_number}
+                    </p>
+                  )}
                   {settings.social.bank_details && (
                     <p>
                       <strong className="text-[var(--white)]">Bank transfer:</strong>{" "}
                       {settings.social.bank_details}
+                    </p>
+                  )}
+                  {!settings.social.momo_number && !settings.social.bank_details && (
+                    <p>
+                      Contact studio desk on{" "}
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[var(--cyan)] underline underline-offset-4"
+                      >
+                        WhatsApp
+                      </a>{" "}
+                      for payment instructions.
                     </p>
                   )}
                   <p>
@@ -539,6 +595,7 @@ export function ClientBookingStatusClient({
                     <Button
                       type="button"
                       variant="secondary"
+                      disabled={cancelling}
                       onClick={() => setShowCancelForm(false)}
                     >
                       Keep request

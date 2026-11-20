@@ -43,7 +43,7 @@ export interface PortfolioItem {
   is_featured: boolean;
   sort_order: number;
   client_consent_to_publish: boolean;
-  consent_note: string | null;
+  consent_note?: string | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -57,7 +57,7 @@ export interface Testimonial {
   author_name: string;
   author_context: string | null;
   quote: string;
-  booking_id: string | null;
+  booking_id?: string | null;
   consent_to_publish: boolean;
   status: PublishStatus;
   sort_order: number;
@@ -161,6 +161,13 @@ export const mediaAssetCreateSchema = z
       }
     }
   });
+
+export const mediaAssetPatchSchema = z.object({
+  is_cover: z.boolean().optional(),
+  position: z.number().int().min(0).max(200).optional(),
+  alt_text: z.string().trim().min(1, "Alt text cannot be empty.").max(400).optional(),
+  caption: z.string().trim().max(300).nullable().optional(),
+});
 
 export const testimonialUpsertSchema = z
   .object({

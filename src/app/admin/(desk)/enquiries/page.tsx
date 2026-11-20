@@ -1,15 +1,13 @@
 import { EnquiriesClient } from "@/components/admin/enquiries-client";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { ScopeDenied } from "@/components/admin/scope-denied";
-import { requireAdmin } from "@/lib/auth";
 import { listAdminEnquiries } from "@/modules/content-legal/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminEnquiriesPage() {
-  let admin;
-  try {
-    admin = await requireAdmin("bookings");
-  } catch {
+  const admin = await resolveAdminPageSession("bookings");
+  if (!admin) {
     return <ScopeDenied requiredScope="bookings" />;
   }
 

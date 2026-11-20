@@ -10,7 +10,11 @@ export function PortfolioTile({ item }: { item: PortfolioItem }) {
   const imgUrl = resolveImageUrl(imgPublicId, { width: 900 });
   const width = cover?.width ?? 1600;
   const height = cover?.height ?? 1067;
-  const year = item.shot_on ? item.shot_on.slice(0, 4) : "2026";
+  const year = item.shot_on
+    ? item.shot_on.slice(0, 4)
+    : item.published_at
+      ? item.published_at.slice(0, 4)
+      : null;
   const countLabel =
     cover?.type === "video_embed" && cover.duration_seconds
       ? `${Math.floor(cover.duration_seconds / 60)}:${String(cover.duration_seconds % 60).padStart(2, "0")}`

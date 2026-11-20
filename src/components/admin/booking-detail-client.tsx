@@ -3,7 +3,7 @@
 import { AlertCircle, CheckCircle2, Download, ExternalLink, KeyRound, MessageCircle, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FormField, INPUT_CLASSES, SELECT_CLASSES, TEXTAREA_CLASSES } from "@/components/ui/form-field";
 import { ShotCaption } from "@/components/ui/viewfinder";
@@ -44,6 +44,29 @@ function toAccraDatetimeLocal(
     return `${fallbackDate.slice(0, 10)}T${fallbackTime}`;
   }
   return "";
+}
+
+function extractApiError(data: unknown, fallback: string): string {
+  if (data && typeof data === "object") {
+    const obj = data as {
+      detail?: string;
+      title?: string;
+      fieldErrors?: Record<string, string[]>;
+    };
+    if (obj.fieldErrors && typeof obj.fieldErrors === "object") {
+      const messages: string[] = [];
+      for (const [field, errs] of Object.entries(obj.fieldErrors)) {
+        if (Array.isArray(errs) && errs.length > 0) {
+          messages.push(`${field}: ${errs.join(", ")}`);
+        }
+      }
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+    }
+    return obj.detail ?? obj.title ?? fallback;
+  }
+  return fallback;
 }
 
 export function BookingDetailClient({
@@ -129,14 +152,58 @@ export function BookingDetailClient({
   const [galleryPin, setGalleryPin] = useState(booking.gallery_pin ?? "");
   const [galleryNotes, setGalleryNotes] = useState(booking.gallery_notes ?? "");
   const [galleryExpiresAt, setGalleryExpiresAt] = useState(() =>
-    booking.gallery_expires_at ? booking.gallery_expires_at.slice(0, 16) : ""
+    booking.gallery_expires_at ? toAccraDatetimeLocal(booking.gallery_expires_at) : ""
   );
   const [markCompleteWithGallery, setMarkCompleteWithGallery] = useState(false);
-  const [galleryBusy, setGalleryBusy] = useState(false);
+
+  const draftQuoteId = draftQuote?.id ?? null;
+  const draftQuoteDepositMinor = draftQuote?.deposit_minor ?? null;
+  const draftQuoteNotes = draftQuote?.notes ?? "";
+  const draftQuoteItems = draftQuote?.items ?? null;
+
+  useEffect(() => {
+    if (!draftQuoteId) return;
+    if (draftQuoteItems && draftQuoteItems.length > 0) {
+      setLines(
+        draftQuoteItems.map((item) => ({
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceGhs: String(fromMinorUnits(item.unit_price_minor)),
+        }))
+      );
+    }
+    if (draftQuoteDepositMinor != null) {
+      setDepositGhs(String(fromMinorUnits(draftQuoteDepositMinor)));
+    }
+    setQuoteNotes(draftQuoteNotes);
+  }, [draftQuoteId, draftQuoteItems, draftQuoteDepositMinor, draftQuoteNotes]);
+
+  useEffect(() => {
+    setStartsAtLocal(toAccraDatetimeLocal(booking.starts_at, booking.event_date, "09:00"));
+    setEndsAtLocal(toAccraDatetimeLocal(booking.ends_at, booking.event_date, "17:00"));
+    setGalleryUrl(booking.gallery_url ?? "");
+    setGalleryPin(booking.gallery_pin ?? "");
+    setGalleryNotes(booking.gallery_notes ?? "");
+    setGalleryExpiresAt(
+      booking.gallery_expires_at ? toAccraDatetimeLocal(booking.gallery_expires_at) : ""
+    );
+  }, [
+    booking.updated_at,
+    booking.starts_at,
+    booking.ends_at,
+    booking.event_date,
+    booking.gallery_url,
+    booking.gallery_pin,
+    booking.gallery_notes,
+    booking.gallery_expires_at,
+  ]);
 
   const computedTotalMinor = lines.reduce((sum, l) => {
-    const unitMinor = toMinorUnits(Number(l.unitPriceGhs) || 0);
-    return sum + Math.round((Number(l.quantity) || 0) * unitMinor);
+    const rawPrice = Number(l.unitPriceGhs);
+    const safePrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : 0;
+    const rawQty = Number(l.quantity);
+    const safeQty = Number.isFinite(rawQty) && rawQty > 0 ? Math.floor(rawQty) : 0;
+    return sum + Math.round(safeQty * toMinorUnits(safePrice));
   }, 0);
 
   const netPaidMinor = payments.reduce(
@@ -161,18 +228,45 @@ export function BookingDetailClient({
   }
 
   async function saveDraftQuote(): Promise<string | null> {
-    setBusy(true);
     setAlertError(null);
     setAlertSuccess(null);
+
+    const parsedItems: Array<{ description: string; quantity: number; unit_price_minor: number }> = [];
+    for (const l of lines) {
+      const desc = l.description.trim();
+      const qty = Number(l.quantity);
+      const unitPrice = Number(l.unitPriceGhs);
+      if (!desc || desc.length < 2) {
+        setAlertError("Every quote line item needs a description (at least 2 characters).");
+        return null;
+      }
+      if (!Number.isFinite(qty) || qty < 1 || !Number.isInteger(qty)) {
+        setAlertError(`Line item "${desc}" quantity must be a whole number of at least 1.`);
+        return null;
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        setAlertError(`Line item "${desc}" unit price must be zero or a positive GHS amount.`);
+        return null;
+      }
+      parsedItems.push({
+        description: desc,
+        quantity: qty,
+        unit_price_minor: toMinorUnits(unitPrice),
+      });
+    }
+
+    const depositNum = depositGhs.trim() === "" ? 0 : Number(depositGhs);
+    if (!Number.isFinite(depositNum) || depositNum < 0) {
+      setAlertError("Deposit required must be zero or a positive GHS amount.");
+      return null;
+    }
+
+    setBusy(true);
     try {
       const payload = {
         quote_id: draftQuote?.id,
-        items: lines.map((l) => ({
-          description: l.description.trim(),
-          quantity: Number(l.quantity) || 1,
-          unit_price_minor: toMinorUnits(Number(l.unitPriceGhs) || 0),
-        })),
-        deposit_minor: toMinorUnits(Number(depositGhs) || 0),
+        items: parsedItems,
+        deposit_minor: toMinorUnits(depositNum),
         notes: quoteNotes.trim() || null,
         starts_at: booking.kind !== "design" && startsAtLocal ? toAccraIso(startsAtLocal) : null,
         ends_at: booking.kind !== "design" && endsAtLocal ? toAccraIso(endsAtLocal) : null,
@@ -182,14 +276,14 @@ export function BookingDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { id?: string; detail?: string };
+      const body = (await res.json().catch(() => null)) as { id?: string } | null;
       if (!res.ok) {
-        setAlertError(body.detail ?? "Could not save draft quote.");
+        setAlertError(extractApiError(body, "Could not save draft quote."));
         return null;
       }
       setAlertSuccess("Draft quote saved.");
       router.refresh();
-      return body.id ?? null;
+      return body?.id ?? null;
     } catch {
       setAlertError("Network error while saving quote.");
       return null;
@@ -205,6 +299,7 @@ export function BookingDetailClient({
 
     setBusy(true);
     setAlertError(null);
+    setAlertSuccess(null);
     try {
       const res = await fetch(
         `/api/admin/bookings/${booking.id}/quotes/${targetId}/send`,
@@ -214,9 +309,9 @@ export function BookingDetailClient({
           body: JSON.stringify({ validDays: Number(validDays) || defaultValidDays }),
         }
       );
-      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setAlertError(body.detail ?? "Could not send quote.");
+        setAlertError(extractApiError(body, "Could not send quote."));
         return;
       }
       setAlertSuccess("Quote sent and prices frozen.");
@@ -237,9 +332,9 @@ export function BookingDetailClient({
         `/api/admin/bookings/${booking.id}/quotes/${quoteId}/revise`,
         { method: "POST" }
       );
-      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setAlertError(body.detail ?? "Could not revise quote.");
+        setAlertError(extractApiError(body, "Could not revise quote."));
         return;
       }
       setAlertSuccess("Previous quote superseded; new draft created.");
@@ -253,25 +348,32 @@ export function BookingDetailClient({
 
   async function handleRecordPayment(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setAlertError(null);
     setAlertSuccess(null);
+
+    const amountNum = Number(payAmountGhs);
+    if (!Number.isFinite(amountNum) || amountNum < 1) {
+      setAlertError("Payment amount must be at least GHS 1.00.");
+      return;
+    }
+
+    setBusy(true);
     try {
       const res = await fetch(`/api/admin/bookings/${booking.id}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           method: payMethod,
-          amount_minor: toMinorUnits(Number(payAmountGhs) || 0),
+          amount_minor: toMinorUnits(amountNum),
           is_refund: isRefund,
           provider_reference: payRef.trim() || null,
           received_at: new Date().toISOString(),
           note: payNote.trim() || null,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setAlertError(body.detail ?? "Could not record payment.");
+        setAlertError(extractApiError(body, "Could not record payment."));
         return;
       }
       setPayRef("");
@@ -286,7 +388,7 @@ export function BookingDetailClient({
   }
 
   async function handleTransition(
-    to: "confirmed" | "completed" | "declined" | "cancelled",
+    to: "reviewing" | "confirmed" | "completed" | "declined" | "cancelled",
     note?: string
   ) {
     setBusy(true);
@@ -303,9 +405,9 @@ export function BookingDetailClient({
           endsAt: booking.kind !== "design" && endsAtLocal ? toAccraIso(endsAtLocal) : undefined,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setAlertError(body.detail ?? "Transition refused.");
+        setAlertError(extractApiError(body, "Transition refused."));
         return;
       }
       setActionMode("none");
@@ -322,19 +424,21 @@ export function BookingDetailClient({
   async function handleRotateToken() {
     setBusy(true);
     setAlertError(null);
+    setAlertSuccess(null);
     try {
       const res = await fetch(`/api/admin/bookings/${booking.id}/token/rotate`, {
         method: "POST",
       });
-      const body = (await res.json().catch(() => ({}))) as {
+      const body = (await res.json().catch(() => null)) as {
         statusUrl?: string;
         detail?: string;
-      };
+        fieldErrors?: Record<string, string[]>;
+      } | null;
       if (!res.ok) {
-        setAlertError(body.detail ?? "Could not rotate link.");
+        setAlertError(extractApiError(body, "Could not rotate link."));
         return;
       }
-      setRotatedLink(body.statusUrl ?? null);
+      setRotatedLink(body?.statusUrl ?? null);
       setAlertSuccess("New status link generated and emailed to client.");
       router.refresh();
     } catch {
@@ -346,24 +450,30 @@ export function BookingDetailClient({
 
   async function handleSaveGallery(e: React.FormEvent) {
     e.preventDefault();
-    setGalleryBusy(true);
     setAlertError(null);
     setAlertSuccess(null);
+    const trimmedUrl = galleryUrl.trim();
+    if (trimmedUrl && !/^https?:\/\//i.test(trimmedUrl)) {
+      setAlertError("Gallery URL must start with https:// or http://.");
+      return;
+    }
+
+    setBusy(true);
     try {
       const res = await fetch(`/api/admin/bookings/${booking.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          galleryUrl: galleryUrl.trim() || null,
+          galleryUrl: trimmedUrl || null,
           galleryPin: galleryPin.trim() || null,
           galleryNotes: galleryNotes.trim() || null,
-          galleryExpiresAt: galleryExpiresAt ? new Date(galleryExpiresAt).toISOString() : null,
+          galleryExpiresAt: galleryExpiresAt ? toAccraIso(galleryExpiresAt) : null,
           markCompleted: markCompleteWithGallery,
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setAlertError(data.detail ?? "Failed to save gallery delivery.");
+        setAlertError(extractApiError(data, "Failed to save gallery delivery."));
         return;
       }
       setAlertSuccess("Client gallery deliverables updated successfully. Visible on client status page.");
@@ -371,7 +481,7 @@ export function BookingDetailClient({
     } catch {
       setAlertError("Network error while saving gallery deliverables.");
     } finally {
-      setGalleryBusy(false);
+      setBusy(false);
     }
   }
 
@@ -936,9 +1046,9 @@ export function BookingDetailClient({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[var(--hairline)]">
-                {galleryUrl ? (
+                {/^https?:\/\//i.test(galleryUrl.trim()) ? (
                   <a
-                    href={galleryUrl}
+                    href={galleryUrl.trim()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-[var(--cyan)] hover:underline"
@@ -950,8 +1060,8 @@ export function BookingDetailClient({
                   <span />
                 )}
 
-                <Button type="submit" variant="cyan" disabled={galleryBusy}>
-                  {galleryBusy ? "Saving deliverables..." : "Save Gallery Deliverables"}
+                <Button type="submit" variant="cyan" disabled={busy}>
+                  {busy ? "Saving deliverables..." : "Save Gallery Deliverables"}
                 </Button>
               </div>
             </form>
@@ -1015,7 +1125,23 @@ export function BookingDetailClient({
               </div>
             )}
 
-            {!["completed", "declined", "cancelled"].includes(booking.status) && (
+            {booking.status === "expired" && (
+              <div className="space-y-3 border border-[var(--amber)] bg-[var(--black)] p-4">
+                <p className="text-sm text-[var(--white)]">
+                  The previous quote expired. Reopen this booking for review before preparing and sending a revised quote.
+                </p>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => handleTransition("reviewing", "Reopened for revised quote.")}
+                >
+                  Reopen for review
+                </Button>
+              </div>
+            )}
+
+            {!["completed", "declined", "cancelled", "expired"].includes(booking.status) && (
               <div className="space-y-3 pt-1">
                 {actionMode === "none" ? (
                   <div className="flex flex-wrap gap-3">
@@ -1023,6 +1149,7 @@ export function BookingDetailClient({
                       <Button
                         type="button"
                         variant="secondary"
+                        disabled={busy}
                         onClick={() => setActionMode("decline")}
                       >
                         Decline request
@@ -1031,6 +1158,7 @@ export function BookingDetailClient({
                     <Button
                       type="button"
                       variant="secondary"
+                      disabled={busy}
                       onClick={() => setActionMode("cancel")}
                     >
                       Cancel booking
@@ -1059,7 +1187,7 @@ export function BookingDetailClient({
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
-                        variant="primary"
+                        variant="danger"
                         disabled={busy || actionReason.trim().length < 3}
                         onClick={() =>
                           handleTransition(
@@ -1073,6 +1201,7 @@ export function BookingDetailClient({
                       <Button
                         type="button"
                         variant="secondary"
+                        disabled={busy}
                         onClick={() => {
                           setActionMode("none");
                           setActionReason("");

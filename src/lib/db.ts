@@ -9,16 +9,12 @@ import { citext } from "@electric-sql/pglite/contrib/citext";
 import { EMBEDDED_SQL_FILES } from "@/lib/schema-sql";
 import { recordDbQuery } from "@/lib/telemetry";
 import {
-  DEFAULT_AKAYETB_ADMIN_ID,
   DEFAULT_BOOKINGS_ADMIN_ID,
   DEFAULT_CONTENT_ADMIN_ID,
   DEFAULT_OWNER_ID,
   EXTRA_SEED_SQL,
-  SEED_ADMIN_PASSWORD,
-  SEED_AKAYETB_TOTP_SECRET,
-  SEED_BOOKINGS_TOTP_SECRET,
-  SEED_CONTENT_TOTP_SECRET,
-  SEED_OWNER_TOTP_SECRET,
+  getSeedAdminPassword,
+  getSeedTotpSecret,
 } from "@/lib/seed-data";
 
 export interface DbQueryResult<T = Record<string, unknown>> {
@@ -112,23 +108,18 @@ function readSqlFile(relativePath: string): string {
 }
 
 async function seedDefaultAdmins(pg: PGlite): Promise<void> {
-  const defaultPasswordHash = hashScryptLocal(SEED_ADMIN_PASSWORD);
-  const akayetPasswordHash = hashScryptLocal("Option#5");
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const defaultPasswordHash = hashScryptLocal(getSeedAdminPassword());
 
   const admins = [
-    {
-      id: DEFAULT_AKAYETB_ADMIN_ID,
-      email: "akayetb@gmail.com",
-      displayName: "Akayet B",
-      totpSecret: SEED_AKAYETB_TOTP_SECRET,
-      scopes: ["bookings", "content", "settings", "team"],
-      passwordHash: akayetPasswordHash,
-    },
     {
       id: DEFAULT_OWNER_ID,
       email: "owner@hephzibahmedia.com",
       displayName: "Kofi Mensah (Owner)",
-      totpSecret: SEED_OWNER_TOTP_SECRET,
+      totpSecret: getSeedTotpSecret("SEED_OWNER_TOTP_SECRET"),
       scopes: ["bookings", "content", "settings", "team"],
       passwordHash: defaultPasswordHash,
     },
@@ -136,7 +127,7 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
       id: DEFAULT_CONTENT_ADMIN_ID,
       email: "content@hephzibahmedia.com",
       displayName: "Ama Boateng (Content)",
-      totpSecret: SEED_CONTENT_TOTP_SECRET,
+      totpSecret: getSeedTotpSecret("SEED_CONTENT_TOTP_SECRET"),
       scopes: ["content"],
       passwordHash: defaultPasswordHash,
     },
@@ -144,7 +135,7 @@ async function seedDefaultAdmins(pg: PGlite): Promise<void> {
       id: DEFAULT_BOOKINGS_ADMIN_ID,
       email: "bookings@hephzibahmedia.com",
       displayName: "Yaw Darko (Bookings)",
-      totpSecret: SEED_BOOKINGS_TOTP_SECRET,
+      totpSecret: getSeedTotpSecret("SEED_BOOKINGS_TOTP_SECRET"),
       scopes: ["bookings"],
       passwordHash: defaultPasswordHash,
     },
@@ -208,6 +199,8 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
        where id = 1
          and (social->>'tiktok' is null or social->>'instagram' = 'https://instagram.com/hephzibahmedia');
     `);
+    const hardeningSql = readSqlFile("supabase/migrations/0004_hardening_and_admin_auth.sql");
+    await pg.exec(hardeningSql);
     await seedDefaultAdmins(pg);
     return;
   }
@@ -223,13 +216,11 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
     "supabase/migrations/0003_gallery_downloads.sql"
   );
   await pg.exec(gallerySql);
-  await pg.exec(`
-    alter table admin_users
-      add column if not exists email text,
-      add column if not exists password_hash text,
-      add column if not exists totp_secret text;
-  `);
   await pg.exec(POST_SCHEMA_ROLE_GRANTS_SQL);
+  const hardeningSql = readSqlFile(
+    "supabase/migrations/0004_hardening_and_admin_auth.sql"
+  );
+  await pg.exec(hardeningSql);
 
   const seedSql = readSqlFile("supabase/seed.sql");
   await pg.exec(seedSql);
@@ -287,6 +278,9 @@ export async function createFreshTestDb(): Promise<PGlite> {
 }
 
 export async function getDb(): Promise<PGlite> {
+  if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required in production; local PGlite fallback is disabled.");
+  }
   if (!globalThis.__hephzibahPgPromise) {
     globalThis.__hephzibahPgPromise = (async () => {
       const dataDir = resolvePgliteDataDir();
@@ -345,13 +339,26 @@ function shouldUsePostgresPool(): boolean {
 function getPgPool(): Pool {
   if (!globalThis.__hephzibahPgPool) {
     const connectionString = process.env.DATABASE_URL;
-    globalThis.__hephzibahPgPool = new Pool({
+    const pool = new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
-      max: 10,
+      max: Number(process.env.PG_POOL_MAX ?? 5),
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+      allowExitOnIdle: true,
     });
+    pool.on("error", (err) => {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "pg_pool_idle_error",
+          message: err instanceof Error ? err.message : String(err),
+        })
+      );
+    });
+    globalThis.__hephzibahPgPool = pool;
   }
   return globalThis.__hephzibahPgPool;
 }
@@ -412,12 +419,25 @@ export function getDbConnectionStatus(): {
   isInitialized: boolean;
   engine: "pglite" | "postgres";
   reusedSingleton: boolean;
+  poolStats?: {
+    totalCount: number;
+    idleCount: number;
+    waitingCount: number;
+  };
 } {
   if (shouldUsePostgresPool()) {
+    const pool = globalThis.__hephzibahPgPool;
     return {
-      isInitialized: Boolean(globalThis.__hephzibahPgPool),
+      isInitialized: Boolean(pool),
       engine: "postgres",
       reusedSingleton: true,
+      poolStats: pool
+        ? {
+            totalCount: pool.totalCount,
+            idleCount: pool.idleCount,
+            waitingCount: pool.waitingCount,
+          }
+        : undefined,
     };
   }
   return {
@@ -462,17 +482,19 @@ export async function withAdminRole<T>(
   if (shouldUsePostgresPool()) {
     return runWithPoolTx(async (client) => {
       await client.query("set local role authenticated");
-      await client.query("select set_config('request.jwt.claim.sub', $1, true)", [adminId]);
-      await client.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
-      await client.query("select set_config('request.jwt.claims', $1, true)", [jwtClaims]);
+      await client.query(
+        "select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.aal', $2, true), set_config('request.jwt.claims', $3, true)",
+        [adminId, aal, jwtClaims]
+      );
     }, fn);
   }
   const db = await getDb();
   return db.transaction(async (tx) => {
     await tx.exec("set local role authenticated");
-    await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [adminId]);
-    await tx.query("select set_config('request.jwt.claim.aal', $1, true)", [aal]);
-    await tx.query("select set_config('request.jwt.claims', $1, true)", [jwtClaims]);
+    await tx.query(
+      "select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.aal', $2, true), set_config('request.jwt.claims', $3, true)",
+      [adminId, aal, jwtClaims]
+    );
     return fn(wrapInstrumentedTx(tx as unknown as DbTx));
   });
 }

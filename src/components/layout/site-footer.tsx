@@ -24,7 +24,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
               <BrandLogo variant="auto" size="lg" />
             </Link>
             <div className="font-mono text-xs text-[var(--cyan)] pt-1">
-              <span className="font-bold tracking-widest uppercase">ACCRA DESK ONLINE · READY FOR BOOKINGS</span>
+              <span className="font-bold tracking-widest uppercase">ACCRA STUDIO DESK · MON&ndash;SAT</span>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-[var(--grey)]">
               Photography, videography, and graphic design across Ghana. Straight pricing, honest availability, and responses within one working day.
@@ -50,7 +50,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
                   href={whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-[44px] items-center gap-2 text-[var(--cyan)] underline underline-offset-4"
+                  className="inline-flex min-h-[44px] items-center gap-2 text-[var(--cyan)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                 >
                   <MessageCircle className="h-4 w-4" aria-hidden="true" />
                   WhatsApp studio desk
@@ -60,7 +60,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
                 <li>
                   <a
                     href={`tel:${settings.phone_e164}`}
-                    className="inline-flex min-h-[44px] items-center gap-2 text-[var(--white)] hover:text-[var(--cyan)]"
+                    className="inline-flex min-h-[44px] items-center gap-2 text-[var(--white)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                   >
                     <Phone className="h-4 w-4" aria-hidden="true" />
                     {settings.phone_e164}
@@ -70,7 +70,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
               <li>
                 <a
                   href={`mailto:${settings.contact_email}`}
-                  className="inline-flex min-h-[44px] items-center text-[var(--white)] hover:text-[var(--cyan)]"
+                  className="inline-flex min-h-[44px] items-center text-[var(--white)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                 >
                   {settings.contact_email}
                 </a>
@@ -84,22 +84,22 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
             </p>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/terms" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)]">
+                <Link href="/terms" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
                   Terms and conditions
                 </Link>
               </li>
               <li>
-                <Link href="/privacy" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)]">
+                <Link href="/privacy" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
                   Privacy policy
                 </Link>
               </li>
               <li>
-                <Link href="/booking-policy" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)]">
+                <Link href="/booking-policy" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
                   Booking, cancellation and refund policy
                 </Link>
               </li>
               <li>
-                <Link href="/testimonials" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)]">
+                <Link href="/testimonials" className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]">
                   Client testimonials
                 </Link>
               </li>
@@ -114,7 +114,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
           <div className="flex items-center gap-4">
             <Link
               href="/admin"
-              className="font-mono-meta text-[11px] text-[var(--grey)] hover:text-[var(--cyan)] transition-colors underline-offset-4 hover:underline"
+              className="inline-flex min-h-[44px] items-center font-mono-meta text-[11px] text-[var(--grey)] hover:text-[var(--cyan)] transition-colors underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
             >
               Studio Desk · Admin
             </Link>

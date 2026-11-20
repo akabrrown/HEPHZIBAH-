@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 /**
  * Request Deduplication (Single-Flight / In-Flight Coalescing)
  *
@@ -7,6 +9,11 @@
  * initiates the asynchronous execution. All concurrent callers share and await
  * the exact same in-flight Promise, eliminating redundant database queries and CPU load.
  */
+
+export function hashDedupePayload(payload: unknown): string {
+  const raw = JSON.stringify(payload ?? null) ?? "null";
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 24);
+}
 
 const inFlight = new Map<string, Promise<unknown>>();
 

@@ -7,41 +7,50 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FormField, INPUT_CLASSES } from "@/components/ui/form-field";
 import { ShotCaption } from "@/components/ui/viewfinder";
+import { adminSignInSchema, adminVerifyTotpSchema } from "@/modules/admin/schema";
 
-export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
+export function AdminSignInForm({
+  showLocalHint,
+  returnTo = "/admin",
+}: {
+  showLocalHint: boolean;
+  returnTo?: string;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<"password" | "totp">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
-  const [totpHint, setTotpHint] = useState<string | null>(null);
   const [adminDisplay, setAdminDisplay] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const clientParsed = adminSignInSchema.safeParse({ email: email.trim(), password });
+    if (!clientParsed.success) {
+      const errs = clientParsed.error.flatten().fieldErrors;
+      setError(errs.email?.[0] ?? errs.password?.[0] ?? "Enter a valid email and password.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/auth/sign-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify(clientParsed.data),
       });
       const body = (await res.json().catch(() => ({}))) as {
         detail?: string;
         displayName?: string;
-        totpHint?: string;
       };
       if (!res.ok) {
         setError(body.detail ?? "Sign in failed.");
         return;
       }
       setAdminDisplay(body.displayName ?? email);
-      if (body.totpHint) {
-        setTotpHint(body.totpHint);
-      }
       setStep("totp");
     } catch {
       setError("Network error while signing in.");
@@ -52,20 +61,26 @@ export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
 
   async function handleTotpSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const clientParsed = adminVerifyTotpSchema.safeParse({ code: totpCode.trim() });
+    if (!clientParsed.success) {
+      setError(clientParsed.error.flatten().fieldErrors.code?.[0] ?? "Enter the 6-digit authenticator code.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/auth/verify-totp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: totpCode.trim() }),
+        body: JSON.stringify(clientParsed.data),
       });
       const body = (await res.json().catch(() => ({}))) as { detail?: string };
       if (!res.ok) {
         setError(body.detail ?? "Authenticator code rejected.");
         return;
       }
-      router.push("/admin");
+      router.push(returnTo.startsWith("/admin") ? returnTo : "/admin");
       router.refresh();
     } catch {
       setError("Network error while verifying code.");
@@ -137,20 +152,6 @@ export function AdminSignInForm({ showLocalHint }: { showLocalHint: boolean }) {
           </form>
         ) : (
           <form onSubmit={handleTotpSubmit} className="space-y-4">
-            {totpHint && (
-              <div className="border border-[var(--cyan)]/40 bg-[var(--cyan)]/10 p-3 text-xs text-[var(--cyan)] flex items-center justify-between">
-                <span>
-                  Current code: <strong className="font-mono text-sm tracking-widest text-[var(--white)]">{totpHint}</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTotpCode(totpHint)}
-                  className="text-xs font-bold uppercase underline underline-offset-4 text-[var(--cyan)] hover:text-[var(--white)] cursor-pointer"
-                >
-                  Fill Code
-                </button>
-              </div>
-            )}
             <FormField
               id="admin-totp"
               label="6-digit authenticator code"

@@ -8,7 +8,22 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
+const MAX_CACHE_ENTRIES = 500;
 const store = new Map<string, CacheEntry<unknown>>();
+
+function pruneIfNeeded(now: number): void {
+  if (store.size < MAX_CACHE_ENTRIES) return;
+  for (const [k, v] of store.entries()) {
+    if (now > v.expiresAt) {
+      store.delete(k);
+    }
+  }
+  while (store.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = store.keys().next().value;
+    if (oldestKey === undefined) break;
+    store.delete(oldestKey);
+  }
+}
 
 export function getCached<T>(key: string): T | undefined {
   const entry = store.get(key);
@@ -17,13 +32,19 @@ export function getCached<T>(key: string): T | undefined {
     store.delete(key);
     return undefined;
   }
+  // Refresh LRU order on read
+  store.delete(key);
+  store.set(key, entry);
   return entry.value as T;
 }
 
 export function setCached<T>(key: string, value: T, ttlSeconds: number = 300): void {
+  const now = Date.now();
+  store.delete(key);
+  pruneIfNeeded(now);
   store.set(key, {
     value,
-    expiresAt: Date.now() + ttlSeconds * 1000,
+    expiresAt: now + ttlSeconds * 1000,
   });
 }
 

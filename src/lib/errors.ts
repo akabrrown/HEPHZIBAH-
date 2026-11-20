@@ -49,6 +49,7 @@ export function toProblemResponse(
         status: err.status,
         headers: {
           "Content-Type": "application/problem+json",
+          "Cache-Control": "no-store",
           ...(err.headers ?? {}),
         },
       }
@@ -78,7 +79,52 @@ export function toProblemResponse(
       status: 500,
       headers: {
         "Content-Type": "application/problem+json",
+        "Cache-Control": "no-store",
       },
     }
   );
+}
+
+/**
+ * Translates common PostgreSQL integrity error codes into structured 4xx ProblemError
+ * responses instead of letting them bubble as generic 500 Internal Server Errors.
+ */
+export function rethrowKnownPgError(
+  err: unknown,
+  messages: {
+    uniqueConflict?: string;
+    foreignKey?: string;
+    invalidSyntax?: string;
+  } = {}
+): never {
+  if (err instanceof ProblemError) {
+    throw err;
+  }
+  const pgErr = err as { code?: string; detail?: string } | null;
+  const code = pgErr?.code;
+  if (code === "23505") {
+    throw new ProblemError(
+      409,
+      "conflict",
+      "Duplicate record",
+      messages.uniqueConflict ?? "A record with this unique identifier or reference already exists."
+    );
+  }
+  if (code === "23503") {
+    throw new ProblemError(
+      409,
+      "in_use",
+      "Record is referenced elsewhere",
+      messages.foreignKey ?? "This action cannot be completed because another record depends on it."
+    );
+  }
+  if (code === "22P02" || code === "22007") {
+    throw new ProblemError(
+      422,
+      "validation_error",
+      "Invalid identifier or date",
+      messages.invalidSyntax ?? "One of the provided IDs or date values has an invalid format."
+    );
+  }
+  throw err;
 }

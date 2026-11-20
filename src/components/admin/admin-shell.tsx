@@ -4,6 +4,7 @@ import { LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { BrandLogo } from "@/components/ui/brand-logo";
 import type { AdminScope } from "@/lib/auth";
 
@@ -36,13 +37,23 @@ export function AdminShell({
   const pathname = usePathname() || "/admin";
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const visibleNav = ADMIN_NAV.filter((item) => !item.scope || scopes.includes(item.scope));
 
   async function handleSignOut() {
-    await fetch("/api/admin/auth/sign-out", { method: "POST" });
-    router.push("/admin/sign-in");
-    router.refresh();
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await fetch("/api/admin/auth/sign-out", { method: "POST" });
+      router.push("/admin/sign-in");
+      router.refresh();
+    } catch {
+      router.push("/admin/sign-in");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -52,9 +63,9 @@ export function AdminShell({
           <div className="flex items-center gap-3">
             <Link
               href="/admin"
-              className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+              className="inline-flex min-h-[44px] items-center gap-2.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
             >
-              <BrandLogo variant="dark" size="sm" />
+              <BrandLogo variant="auto" size="sm" />
               <span className="font-display text-sm font-extrabold uppercase tracking-wider text-[var(--white)] hidden sm:inline">
                 Desk
               </span>
@@ -74,7 +85,8 @@ export function AdminShell({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`inline-flex min-h-[44px] items-center px-1.5 text-sm font-medium transition-colors ${
+                  aria-current={active ? "page" : undefined}
+                  className={`inline-flex min-h-[44px] items-center px-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
                     active
                       ? "text-[var(--cyan)] underline decoration-2 underline-offset-4"
                       : "text-[var(--white)] hover:text-[var(--cyan)]"
@@ -87,30 +99,32 @@ export function AdminShell({
           </nav>
 
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Link
               href="/"
               target="_blank"
-              className="hidden min-h-[44px] items-center border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--grey)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] sm:inline-flex"
+              className="hidden min-h-[44px] items-center border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--grey)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] sm:inline-flex"
             >
               Public site
             </Link>
             <button
               type="button"
               aria-label="Sign out"
+              disabled={signingOut}
               onClick={handleSignOut}
-              className="inline-flex min-h-[44px] items-center gap-1.5 border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--red)] hover:text-[var(--red)] cursor-pointer"
+              className="inline-flex min-h-[44px] items-center gap-1.5 border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--red)] hover:text-[var(--red)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <LogOut className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Sign out</span>
+              <span className="hidden sm:inline">{signingOut ? "Signing out..." : "Sign out"}</span>
             </button>
             <button
               type="button"
               aria-expanded={navOpen}
               aria-label="Toggle admin menu"
               onClick={() => setNavOpen((v) => !v)}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] lg:hidden cursor-pointer"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-[var(--control-border)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] lg:hidden cursor-pointer"
             >
-              {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {navOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
             </button>
           </div>
         </div>

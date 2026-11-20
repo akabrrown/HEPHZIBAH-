@@ -55,7 +55,8 @@ export async function findEnquiriesAdmin(
       `select id, name, email::text as email, phone, message, status, privacy_version, consented_at::text, created_at::text
          from enquiries
         where status = $1::enquiry_status
-        order by created_at desc`,
+        order by created_at desc
+        limit 200`,
       [status]
     );
     return res.rows;
@@ -63,7 +64,8 @@ export async function findEnquiriesAdmin(
   const res = await tx.query<EnquiryRecord>(
     `select id, name, email::text as email, phone, message, status, privacy_version, consented_at::text, created_at::text
        from enquiries
-      order by created_at desc`
+      order by created_at desc
+      limit 200`
   );
   return res.rows;
 }

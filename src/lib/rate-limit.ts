@@ -3,14 +3,72 @@ import { ProblemError } from "@/lib/errors";
 
 interface RateWindow {
   timestamps: number[];
+  windowMs: number;
+  lastTouched: number;
 }
 
+const MAX_BUCKETS = 10_000;
 const buckets = new Map<string, RateWindow>();
 
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfterSeconds: number;
+  resetUnixSeconds: number;
+}
+
+function pruneExpiredBuckets(nowMs: number): void {
+  if (buckets.size < MAX_BUCKETS) return;
+  for (const [k, win] of buckets.entries()) {
+    const cutoff = nowMs - win.windowMs;
+    if (win.lastTouched < cutoff || win.timestamps.every((ts) => ts <= cutoff)) {
+      buckets.delete(k);
+    }
+  }
+  while (buckets.size >= MAX_BUCKETS) {
+    const oldestKey = buckets.keys().next().value;
+    if (oldestKey === undefined) break;
+    buckets.delete(oldestKey);
+  }
+}
+
+/**
+ * Inspects whether a sliding-window bucket is already exhausted WITHOUT recording an attempt.
+ * Used before password verification so locked accounts cannot be probed for valid passwords.
+ */
+export function peekSlidingWindowLimit(
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+  nowMs: number = Date.now()
+): RateLimitResult {
+  const cutoff = nowMs - windowMs;
+  const existing = buckets.get(key);
+  if (!existing) {
+    return {
+      allowed: true,
+      remaining: maxRequests,
+      retryAfterSeconds: 0,
+      resetUnixSeconds: Math.ceil((nowMs + windowMs) / 1000),
+    };
+  }
+  const active = existing.timestamps.filter((ts) => ts > cutoff);
+  if (active.length >= maxRequests) {
+    const oldest = active[0] ?? nowMs;
+    const retryAfterSeconds = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfterSeconds,
+      resetUnixSeconds: Math.ceil((oldest + windowMs) / 1000),
+    };
+  }
+  return {
+    allowed: true,
+    remaining: Math.max(0, maxRequests - active.length),
+    retryAfterSeconds: 0,
+    resetUnixSeconds: Math.ceil(((active[0] ?? nowMs) + windowMs) / 1000),
+  };
 }
 
 export function checkSlidingWindowLimit(
@@ -20,26 +78,31 @@ export function checkSlidingWindowLimit(
   nowMs: number = Date.now()
 ): RateLimitResult {
   const cutoff = nowMs - windowMs;
-  const existing = buckets.get(key) ?? { timestamps: [] };
-  const active = existing.timestamps.filter((ts) => ts > cutoff);
+  const existing = buckets.get(key);
+  const active = existing ? existing.timestamps.filter((ts) => ts > cutoff) : [];
 
   if (active.length >= maxRequests) {
     const oldest = active[0] ?? nowMs;
     const retryAfterSeconds = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
-    buckets.set(key, { timestamps: active });
+    buckets.set(key, { timestamps: active, windowMs, lastTouched: nowMs });
     return {
       allowed: false,
       remaining: 0,
       retryAfterSeconds,
+      resetUnixSeconds: Math.ceil((oldest + windowMs) / 1000),
     };
   }
 
+  if (!existing) {
+    pruneExpiredBuckets(nowMs);
+  }
   active.push(nowMs);
-  buckets.set(key, { timestamps: active });
+  buckets.set(key, { timestamps: active, windowMs, lastTouched: nowMs });
   return {
     allowed: true,
     remaining: Math.max(0, maxRequests - active.length),
     retryAfterSeconds: 0,
+    resetUnixSeconds: Math.ceil(((active[0] ?? nowMs) + windowMs) / 1000),
   };
 }
 
@@ -48,6 +111,10 @@ export function resetRateLimitBuckets(): void {
 }
 
 export function getClientSourceKey(headers: Headers): string {
+  const vercelIp = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercelIp) return vercelIp;
+  const cfIp = headers.get("cf-connecting-ip")?.trim();
+  if (cfIp) return cfIp;
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();
@@ -75,6 +142,14 @@ const BANNED_BOT_SUBSTRINGS = [
   "wp-scan",
   "censys",
   "shodan",
+  "gptbot",
+  "bytespider",
+  "ccbot",
+  "claudebot",
+  "anthropic-ai",
+  "google-extended",
+  "amazonbot",
+  "meta-externalagent",
 ];
 
 export function isBotOrMaliciousCrawler(userAgent: string | null | undefined): boolean {
@@ -124,7 +199,14 @@ export function protectEndpoint(
       "rate_limited",
       "Too many requests",
       options.customMessage ?? "Please slow down and wait a few minutes before trying again.",
-      { headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      {
+        headers: {
+          "Retry-After": String(limit.retryAfterSeconds),
+          "X-RateLimit-Limit": String(options.maxRequests),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": String(limit.resetUnixSeconds),
+        },
+      }
     );
   }
 }

@@ -49,7 +49,7 @@ export const adminTeamUpdateSchema = z.object({
     .min(1, "Full name cannot be empty.")
     .max(80, "Full name must be 80 characters or fewer.")
     .optional(),
-  scopes: z.array(z.enum(adminScopeValues)).optional(),
+  scopes: z.array(z.enum(adminScopeValues)).min(1, "Assign at least one scope.").optional(),
   is_active: z.boolean().optional(),
   reset_totp: z.boolean().optional(),
 });

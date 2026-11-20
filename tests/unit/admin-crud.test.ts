@@ -1,13 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
+import { NextRequest } from "next/server";
+import { GET as getHealth } from "@/app/api/health/route";
+import { POST as postAdminSignIn } from "@/app/api/admin/auth/sign-in/route";
 import { createFreshTestDb, setTestDbInstance } from "@/lib/db";
-import { DEFAULT_CONTENT_ADMIN_ID, DEFAULT_OWNER_ID } from "@/lib/seed-data";
 import { ProblemError } from "@/lib/errors";
+import { resetRateLimitBuckets } from "@/lib/rate-limit";
 import {
+  DEFAULT_CONTENT_ADMIN_ID,
+  DEFAULT_OWNER_ID,
+  getSeedAdminPassword,
+} from "@/lib/seed-data";
+import {
+  authenticateAdminPassword,
   createTeamAdmin,
   listTeamAdmins,
   updateTeamAdmin,
 } from "@/modules/admin/service";
+import { submitBookingRequest } from "@/modules/booking/service";
 import {
   deleteAdminPackage,
   deleteAdminService,
@@ -16,6 +26,7 @@ import {
   upsertAdminService,
 } from "@/modules/catalog/service";
 import {
+  addAdminMediaAsset,
   deleteAdminFaq,
   deleteAdminPortfolioItem,
   deleteAdminTestimonial,
@@ -225,5 +236,142 @@ describe("Admin CRUD & Delete operations", () => {
     expect(updateErr).toBeInstanceOf(ProblemError);
     expect((updateErr as ProblemError).status).toBe(422);
     expect((updateErr as ProblemError).fieldErrors?.id).toBeDefined();
+  });
+
+  it("blocks deleting a service with existing bookings (409) and includes cover_asset in admin portfolio list", async () => {
+    const svc = await upsertAdminService(contentAdmin, {
+      kind: "design",
+      slug: "editorial-layout-test",
+      name: "Editorial Layout Test",
+      summary: "Custom publication and print systems.",
+      starting_price_minor: 200000,
+      sort_order: 20,
+      is_active: true,
+    });
+
+    const linkedPkg = await upsertAdminPackage(contentAdmin, {
+      service_id: svc.id,
+      name: "Editorial Core Package",
+      price_minor: 200000,
+      deliverables: ["Editorial layout"],
+      sort_order: 1,
+      is_active: true,
+    });
+
+    await submitBookingRequest({
+      kind: "design",
+      serviceId: svc.id,
+      deadline: "2027-11-15",
+      brief: "Corporate annual report layout and print production supervision.",
+      clientName: "Kofi Boateng",
+      clientEmail: "kofi.boateng@ghana.example",
+      clientPhone: "024 111 2222",
+      preferredContact: "email",
+      consentAccepted: true,
+      privacyVersion: "1.0",
+      termsVersion: "1.0",
+    });
+
+    await expect(deleteAdminService(contentAdmin, svc.id)).rejects.toMatchObject({
+      status: 409,
+      code: "in_use",
+    });
+
+    const afterRollback = await listAdminServicesAndPackages(contentAdmin);
+    expect(afterRollback.packages.some((p) => p.id === linkedPkg.id)).toBe(true);
+
+    const ownerAdmin: AdminSessionPayload = {
+      adminId: DEFAULT_OWNER_ID,
+      email: "owner@hephzibahmedia.com",
+      displayName: "Kofi Mensah (Owner)",
+      scopes: ["bookings", "content", "settings", "team"],
+      aal: "aal2",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      jti: "test-jti-owner-del",
+    };
+
+    await expect(deleteAdminService(ownerAdmin, svc.id)).rejects.toMatchObject({
+      status: 409,
+      code: "service_in_use",
+    });
+
+    const pf = await upsertAdminPortfolioItem(contentAdmin, {
+      kind: "design",
+      slug: "cover-asset-admin-test",
+      title: "Cover Asset Admin Test",
+      status: "draft",
+      client_consent_to_publish: false,
+      sort_order: 2,
+    });
+
+    const asset = await addAdminMediaAsset(contentAdmin, pf.id, {
+      type: "image",
+      is_cover: true,
+      cloudinary_public_id: "local/design-identity-cover",
+      width: 1600,
+      height: 1000,
+      alt_text: "Brand stationery and editorial guidelines cover preview",
+    });
+
+    const portfolioList = await listAdminPortfolio(contentAdmin);
+    const listed = portfolioList.find((p) => p.id === pf.id);
+    expect(listed?.cover_asset?.id).toBe(asset.id);
+    expect(listed?.cover_asset?.cloudinary_public_id).toBe("local/design-identity-cover");
+  });
+
+  it("omits totpHint from sign-in response, enforces pre-verify lockout, and serves /api/health telemetry", async () => {
+    resetRateLimitBuckets();
+    const seedPass = getSeedAdminPassword();
+
+    const validReq = new NextRequest("http://localhost:3000/api/admin/auth/sign-in", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "Mozilla/5.0",
+        "x-forwarded-for": "10.0.0.21",
+      },
+      body: JSON.stringify({
+        email: "owner@hephzibahmedia.com",
+        password: seedPass,
+      }),
+    });
+    const validRes = await postAdminSignIn(validReq);
+    expect(validRes.status).toBe(200);
+    expect(validRes.headers.get("Server-Timing")).toContain("app;dur=");
+    const validJson = (await validRes.json()) as Record<string, unknown>;
+    expect(validJson.nextStep).toBe("verify_totp");
+    expect(validJson).not.toHaveProperty("totpHint");
+    expect(validJson).not.toHaveProperty("totpSecret");
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        authenticateAdminPassword(
+          { email: "content@hephzibahmedia.com", password: "WrongPassword#999" },
+          "10.0.0.22"
+        )
+      ).rejects.toMatchObject({ status: 401 });
+    }
+    await expect(
+      authenticateAdminPassword(
+        { email: "content@hephzibahmedia.com", password: "WrongPassword#999" },
+        "10.0.0.22"
+      )
+    ).rejects.toMatchObject({ status: 429, code: "account_locked" });
+
+    // Even a valid password is now pre-blocked with 429 before DB/password check
+    await expect(
+      authenticateAdminPassword(
+        { email: "content@hephzibahmedia.com", password: seedPass },
+        "10.0.0.22"
+      )
+    ).rejects.toMatchObject({ status: 429, code: "account_locked" });
+
+    const healthReq = new NextRequest("http://localhost:3000/api/health", {
+      headers: { "user-agent": "Mozilla/5.0", "x-forwarded-for": "10.0.0.23" },
+    });
+    const healthRes = await getHealth(healthReq);
+    expect(healthRes.status).toBe(200);
+    expect(healthRes.headers.get("Server-Timing")).toContain("db;dur=");
+    expect(healthRes.headers.get("Cache-Control")).toContain("s-maxage=15");
   });
 });

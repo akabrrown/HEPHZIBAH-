@@ -31,12 +31,16 @@ describe("Gallery Delivery Feature", () => {
     }
   });
 
-  it("rejects non-URL strings for galleryUrl", () => {
-    const invalid = {
-      galleryUrl: "not-a-valid-url",
-    };
-    const parsed = galleryDeliverySchema.safeParse(invalid);
-    expect(parsed.success).toBe(false);
+  it("rejects non-URL and non-HTTP(S) schemes like javascript: for galleryUrl", () => {
+    for (const badUrl of [
+      "not-a-valid-url",
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "ftp://files.example/gallery",
+    ]) {
+      const parsed = galleryDeliverySchema.safeParse({ galleryUrl: badUrl });
+      expect(parsed.success).toBe(false);
+    }
   });
 
   it("rejects PINs exceeding length limits", () => {

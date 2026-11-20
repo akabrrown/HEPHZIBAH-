@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ArrowRight, Camera, Film, Layers } from "lucide-react";
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/button";
 import { PortfolioTile } from "@/components/ui/portfolio-tile";
@@ -17,29 +18,35 @@ export const metadata: Metadata = {
 const SERVICE_PANELS = [
   {
     kind: "photography" as const,
+    index: "01",
     title: "Photography",
     tagline: "Weddings, traditional ceremonies, funerals, corporate gatherings, and portraits.",
-    image: "/media/cathedral-wedding-cover.svg",
-    alt: "Wide architectural frame of wedding guests applauding as the couple walks down the aisle",
-    caption: "EVENT & PORTRAIT / ACCRA / NATIVE RATIO",
+    deliverables: ["Colour-graded digital gallery", "Mixed venue lighting mastery", "Private client consent policy"],
+    caption: "EVENT & PORTRAIT · ACCRA",
   },
   {
     kind: "videography" as const,
+    index: "02",
     title: "Videography",
     tagline: "Multi-camera ceremony films, music videos, and founder documentaries with clean audio.",
-    image: "/media/videography-showreel-poster.svg",
-    alt: "Still frame from live acoustic performance session in Labone courtyard",
-    caption: "CINEMA & AUDIO / 4K 24FPS / SHOWREEL",
+    deliverables: ["Dual-system lapel & ambient audio", "Graded highlight & full film cuts", "4K & social-ready exports"],
+    caption: "CINEMA & AUDIO · 4K 24FPS",
   },
   {
     kind: "design" as const,
+    index: "03",
     title: "Graphic Design",
     tagline: "Brand marks, event programmes, flyers, and social campaign sets built to deadline.",
-    image: "/media/design-identity-cover.svg",
-    alt: "Monochrome brand identity mark and packaging grid for Gold Coast Roasters",
-    caption: "IDENTITY & PRINT / OSU / VECTOR & PRINT",
+    deliverables: ["CMYK print-ready PDFs with bleed", "Campaign kits for web & WhatsApp", "Vector identity master files"],
+    caption: "IDENTITY & PRINT · OSU",
   },
 ];
+
+const DISCIPLINE_ICONS = {
+  photography: Camera,
+  videography: Film,
+  design: Layers,
+} as const;
 
 const HOW_IT_WORKS = [
   {
@@ -110,7 +117,7 @@ export default async function HomePage() {
               <ButtonLink
                 href="/book"
                 variant="primary"
-                className="px-6 py-3 text-sm font-bold"
+                className="px-6 py-3 text-sm font-bold focus-visible:ring-offset-[#0A0A0B]"
               >
                 Request a booking
               </ButtonLink>
@@ -153,32 +160,51 @@ export default async function HomePage() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-3">
-            {SERVICE_PANELS.map((panel) => (
-              <FramingCorners
-                key={panel.kind}
-                className="group border border-[var(--hairline)] bg-[var(--ink-2)] hm-card-interactive"
-              >
-                <Link href={`/services/${panel.kind}`} className="block p-4">
-                  <div className="aspect-[16/10] w-full overflow-hidden bg-[var(--black)]">
-                    <img
-                      src={panel.image}
-                      alt={panel.alt}
-                      width={1600}
-                      height={1000}
-                      loading="lazy"
-                      className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
-                    />
-                  </div>
-                  <ShotCaption parts={[panel.caption]} className="mt-3" />
-                  <h3 className="mt-1.5 font-display text-xl font-bold text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">
-                    {panel.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--grey)]">
-                    {panel.tagline}
-                  </p>
-                </Link>
-              </FramingCorners>
-            ))}
+            {SERVICE_PANELS.map((panel) => {
+              const Icon = DISCIPLINE_ICONS[panel.kind];
+              return (
+                <FramingCorners
+                  key={panel.kind}
+                  className="group border border-[var(--hairline)] bg-[var(--ink-2)] hm-card-interactive"
+                >
+                  <Link
+                    href={`/services/${panel.kind}`}
+                    className="flex h-full flex-col justify-between p-6 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-[2px] border border-[var(--hairline)] bg-[var(--black)] text-[var(--cyan)]">
+                          <Icon className="h-5 w-5" aria-hidden="true" />
+                        </div>
+                        <span className="font-mono-meta text-xs font-bold tracking-widest text-[var(--grey)]">
+                          {panel.index}
+                        </span>
+                      </div>
+                      <ShotCaption parts={[panel.caption]} className="mt-4" />
+                      <h3 className="mt-2 font-display text-2xl font-bold text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">
+                        {panel.title}
+                      </h3>
+                      <p className="mt-2 text-sm leading-relaxed text-[var(--grey)]">
+                        {panel.tagline}
+                      </p>
+                      <ul className="mt-4 space-y-1.5 border-t border-[var(--hairline)] pt-4 text-xs text-[var(--grey)]">
+                        {panel.deliverables.map((item) => (
+                          <li key={item} className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 shrink-0 bg-[var(--cyan)]" aria-hidden="true" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <span className="mt-6 inline-flex items-center gap-2 font-mono-meta text-xs uppercase tracking-wider text-[var(--cyan)]">
+                      Explore {panel.title.toLowerCase()}
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+                    </span>
+                  </Link>
+                </FramingCorners>
+              );
+            })}
           </div>
         </div>
       </section>

@@ -2,7 +2,7 @@
 
 import { AlertCircle, ArrowLeft, ArrowRight, Check, MessageCircle, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -12,6 +12,7 @@ import {
   SELECT_CLASSES,
   TEXTAREA_CLASSES,
 } from "@/components/ui/form-field";
+import { OfflineBanner } from "@/components/ui/offline-banner";
 import { FramingCorners, ShotCaption } from "@/components/ui/viewfinder";
 import {
   addDaysIso,
@@ -22,7 +23,14 @@ import {
   normalizeGhanaPhone,
 } from "@/lib/dates";
 import { formatGhsFromMinor } from "@/lib/money";
-import type { Occasion, PackageItem, Service, ServiceKind, SiteSettings } from "@/modules/catalog/schema";
+import {
+  serviceKindValues,
+  type Occasion,
+  type PackageItem,
+  type Service,
+  type ServiceKind,
+  type SiteSettings,
+} from "@/modules/catalog/schema";
 import { contactMethodValues, timeOfDayValues, type ContactMethod, type TimeOfDay } from "@/modules/booking/schema";
 
 const DRAFT_STORAGE_KEY = "hm_booking_draft_v1";
@@ -68,6 +76,29 @@ function createIdempotencyKey(): string {
   return `hm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const FIELD_TO_STEP: Record<string, 1 | 2 | 3 | 4> = {
+  kind: 1,
+  serviceId: 1,
+  packageId: 1,
+  occasionId: 1,
+  occasionOther: 1,
+  eventDate: 2,
+  timeOfDay: 2,
+  venueCity: 2,
+  venueText: 2,
+  guestCount: 2,
+  deadline: 2,
+  deliverableFormats: 2,
+  brief: 3,
+  referenceLinks: 3,
+  budgetBand: 3,
+  clientName: 4,
+  clientPhone: 4,
+  clientEmail: 4,
+  preferredContact: 4,
+  consentAccepted: 4,
+};
+
 export function BookingWizard({
   services,
   occasions,
@@ -94,10 +125,20 @@ export function BookingWizard({
   initialSource?: string;
 }) {
   const router = useRouter();
-  const defaultKind: ServiceKind = initialKind ?? "photography";
+  const searchParams = useSearchParams();
+  const qpKind = initialKind ?? searchParams.get("kind");
+  const resolvedKind: ServiceKind =
+    qpKind && serviceKindValues.includes(qpKind as ServiceKind)
+      ? (qpKind as ServiceKind)
+      : "photography";
+  const resolvedServiceId = initialServiceId ?? searchParams.get("service") ?? undefined;
+  const resolvedPackageId = initialPackageId ?? searchParams.get("package") ?? undefined;
+  const resolvedOccasionId = initialOccasionId ?? searchParams.get("occasion") ?? undefined;
+  const resolvedSource = initialSource ?? searchParams.get("ref")?.slice(0, 40) ?? undefined;
+
   const defaultService =
-    services.find((s) => s.id === initialServiceId && s.kind === defaultKind)?.id ??
-    services.find((s) => s.kind === defaultKind)?.id ??
+    services.find((s) => s.id === resolvedServiceId && s.kind === resolvedKind)?.id ??
+    services.find((s) => s.kind === resolvedKind)?.id ??
     services[0]?.id ??
     "";
 
@@ -105,11 +146,11 @@ export function BookingWizard({
   const [draft, setDraft] = useState<DraftState>(() => ({
     step: 1,
     idempotencyKey: createIdempotencyKey(),
-    kind: defaultKind,
+    kind: resolvedKind,
     serviceId: defaultService,
-    occasionId: initialOccasionId ?? "",
+    occasionId: resolvedOccasionId ?? "",
     occasionOther: "",
-    packageId: initialPackageId ?? "",
+    packageId: resolvedPackageId ?? "",
     eventDate: "",
     timeOfDay: "morning",
     venueText: "",
@@ -125,7 +166,7 @@ export function BookingWizard({
     clientEmail: "",
     preferredContact: "whatsapp",
     consentAccepted: false,
-    source: initialSource ?? "",
+    source: resolvedSource ?? "",
   }));
 
   const [newLinkInput, setNewLinkInput] = useState("");
@@ -146,7 +187,7 @@ export function BookingWizard({
       const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<DraftState>;
-        const hasUrlPreselect = Boolean(initialKind || initialServiceId || initialPackageId || initialOccasionId);
+        const hasUrlPreselect = Boolean(qpKind || resolvedServiceId || resolvedPackageId || resolvedOccasionId);
         if (!hasUrlPreselect && parsed.kind) {
           setDraft((prev) => ({
             ...prev,
@@ -161,7 +202,7 @@ export function BookingWizard({
       // Ignore corrupt session storage
     }
     setHydrated(true);
-  }, [initialKind, initialServiceId, initialPackageId, initialOccasionId]);
+  }, [qpKind, resolvedServiceId, resolvedPackageId, resolvedOccasionId]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -177,15 +218,23 @@ export function BookingWizard({
     setAvailError(false);
     try {
       const today = getAccraTodayIso();
-      const to = addDaysIso(today, 395);
-      const res = await fetch(`/api/availability?from=${today}&to=${to}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Availability request failed");
-      const json = (await res.json()) as { dates?: string[] };
-      if (Array.isArray(json.dates)) {
-        setUnavailableDates(json.dates);
+      const maxDays = Math.min(Math.max(settings.max_advance_days, 60), 790);
+      const firstEnd = addDaysIso(today, Math.min(maxDays, 395));
+      const requests: Array<Promise<Response>> = [
+        fetch(`/api/availability?from=${today}&to=${firstEnd}`),
+      ];
+      if (maxDays > 395) {
+        const secondStart = addDaysIso(today, 396);
+        const secondEnd = addDaysIso(today, maxDays);
+        requests.push(fetch(`/api/availability?from=${secondStart}&to=${secondEnd}`));
       }
+      const responses = await Promise.all(requests);
+      if (responses.some((r) => !r.ok)) throw new Error("Availability request failed");
+      const payloads = (await Promise.all(responses.map((r) => r.json()))) as Array<{ dates?: string[] }>;
+      const merged = Array.from(
+        new Set(payloads.flatMap((p) => (Array.isArray(p.dates) ? p.dates : [])))
+      );
+      setUnavailableDates(merged);
     } catch {
       setAvailError(true);
     } finally {
@@ -229,8 +278,12 @@ export function BookingWizard({
     const errs: Record<string, string> = {};
     if (step === 1) {
       if (!draft.serviceId) errs.serviceId = "Please choose a service.";
-      if (draft.kind !== "design" && !draft.occasionId && draft.occasionOther.trim().length < 2) {
-        errs.occasionId = "Choose an occasion or enter your own.";
+      if (draft.kind !== "design") {
+        if (!draft.occasionId) {
+          errs.occasionId = "Choose an occasion or pick Other.";
+        } else if (draft.occasionId === "other" && draft.occasionOther.trim().length < 2) {
+          errs.occasionOther = "Describe the occasion (at least 2 characters).";
+        }
       }
     } else if (step === 2) {
       if (draft.kind === "design") {
@@ -238,17 +291,27 @@ export function BookingWizard({
           errs.deadline = "Choose a target deadline.";
         } else if (draft.deadline < earliestDate) {
           errs.deadline = `Choose a deadline from ${earliestDate} onward.`;
+        } else if (draft.deadline > latestDate) {
+          errs.deadline = `Choose a deadline up to ${latestDate}.`;
         }
       } else {
         if (!draft.eventDate) {
           errs.eventDate = "Pick an event date on the calendar.";
         } else if (draft.eventDate < earliestDate) {
           errs.eventDate = `Choose a date from ${earliestDate} onward.`;
+        } else if (draft.eventDate > latestDate) {
+          errs.eventDate = `Choose a date up to ${latestDate}.`;
         } else if (unavailableDates.includes(draft.eventDate)) {
           errs.eventDate = "We are already booked that day. Pick another date.";
         }
         if (!draft.venueCity.trim() || draft.venueCity.trim().length < 2) {
           errs.venueCity = "Enter the town or city for your event.";
+        }
+        if (draft.guestCount.trim()) {
+          const n = Number(draft.guestCount);
+          if (!Number.isInteger(n) || n < 1 || n > 20000) {
+            errs.guestCount = "Enter a whole number of guests between 1 and 20,000.";
+          }
         }
       }
     } else if (step === 3) {
@@ -282,7 +345,7 @@ export function BookingWizard({
     }
     setStepErrors({});
     setDraft((prev) => ({ ...prev, step: (fromStep + 1) as 1 | 2 | 3 | 4 }));
-    if (fromStep === 1) {
+    if (fromStep === 1 && draft.kind !== "design") {
       void refreshAvailability();
     }
   }
@@ -376,10 +439,18 @@ export function BookingWizard({
         }
         if (body.fieldErrors) {
           const mapped: Record<string, string> = {};
+          let targetStep: 1 | 2 | 3 | 4 = 4;
           for (const [k, msgs] of Object.entries(body.fieldErrors)) {
-            if (msgs?.[0]) mapped[k] = msgs[0];
+            if (msgs?.[0]) {
+              mapped[k] = msgs[0];
+              const ownerStep = FIELD_TO_STEP[k] ?? 4;
+              if (ownerStep < targetStep) targetStep = ownerStep;
+            }
           }
           setStepErrors(mapped);
+          if (targetStep < 4) {
+            setDraft((prev) => ({ ...prev, step: targetStep }));
+          }
         }
         setSubmitError((prev) => ({
           title: body.title ?? "Could not send request",
@@ -434,6 +505,8 @@ export function BookingWizard({
 
   return (
     <div className="space-y-8">
+      <OfflineBanner />
+
       {/* Frame counter stepper */}
       <nav aria-label="Booking steps" className="border border-[var(--hairline)] bg-[var(--ink-2)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--hairline)]">
@@ -454,13 +527,14 @@ export function BookingWizard({
                   <button
                     type="button"
                     disabled={!isPast && !isCurrent}
+                    aria-current={isCurrent ? "step" : undefined}
                     onClick={() => {
                       if (isPast) {
                         setStepErrors({});
                         updateDraft("step", st.num);
                       }
                     }}
-                    className={`flex min-h-[44px] w-full items-center justify-between border px-3 py-2 text-left text-xs font-medium transition-colors ${
+                    className={`flex min-h-[44px] w-full items-center justify-between border px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] ${
                       isCurrent
                         ? "border-[var(--cyan)] bg-[var(--black)] text-[var(--white)]"
                         : isPast
@@ -548,6 +622,7 @@ export function BookingWizard({
                     <button
                       key={item.k}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => {
                         const firstSvc = services.find((s) => s.kind === item.k);
                         setDraft((prev) => ({
@@ -582,24 +657,32 @@ export function BookingWizard({
               required
               error={stepErrors.serviceId}
             >
-              <select
-                id="booking-service"
-                className={SELECT_CLASSES}
-                value={draft.serviceId}
-                onChange={(e) => {
-                  const newId = e.target.value;
-                  setDraft((prev) => ({ ...prev, serviceId: newId, packageId: "" }));
-                }}
-              >
-                {filteredServices.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.starting_price_minor !== null
-                      ? ` (from ${formatGhsFromMinor(s.starting_price_minor)})`
-                      : ""}
-                  </option>
-                ))}
-              </select>
+              {filteredServices.length === 0 ? (
+                <p className="border border-[var(--hairline)] bg-[var(--black)] p-3 text-sm text-[var(--grey)]">
+                  No active services are listed under this category yet. Choose another category above or contact the studio desk directly.
+                </p>
+              ) : (
+                <select
+                  id="booking-service"
+                  aria-invalid={Boolean(stepErrors.serviceId) || undefined}
+                  aria-describedby={stepErrors.serviceId ? "booking-service-error" : undefined}
+                  className={SELECT_CLASSES}
+                  value={draft.serviceId}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setDraft((prev) => ({ ...prev, serviceId: newId, packageId: "" }));
+                  }}
+                >
+                  {filteredServices.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                      {s.starting_price_minor !== null
+                        ? ` (from ${formatGhsFromMinor(s.starting_price_minor)})`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
             </FormField>
 
             <FormField
@@ -615,6 +698,8 @@ export function BookingWizard({
             >
               <select
                 id="booking-occasion"
+                aria-invalid={Boolean(stepErrors.occasionId) || undefined}
+                aria-describedby={stepErrors.occasionId ? "booking-occasion-error" : "booking-occasion-help"}
                 className={SELECT_CLASSES}
                 value={draft.occasionId}
                 onChange={(e) => updateDraft("occasionId", e.target.value)}
@@ -640,6 +725,8 @@ export function BookingWizard({
                   id="booking-occasion-other"
                   type="text"
                   maxLength={80}
+                  aria-invalid={Boolean(stepErrors.occasionOther) || undefined}
+                  aria-describedby={stepErrors.occasionOther ? "booking-occasion-other-error" : undefined}
                   className={INPUT_CLASSES}
                   placeholder="e.g. Book launch or thanksgiving"
                   value={draft.occasionOther}
@@ -772,10 +859,13 @@ export function BookingWizard({
                   id="booking-time-of-day"
                   label="Part of the day"
                   required
+                  error={stepErrors.timeOfDay}
                   helpText="We confirm exact start and end hours on your quote."
                 >
                   <select
                     id="booking-time-of-day"
+                    aria-invalid={Boolean(stepErrors.timeOfDay) || undefined}
+                    aria-describedby={stepErrors.timeOfDay ? "booking-time-of-day-error" : "booking-time-of-day-help"}
                     className={SELECT_CLASSES}
                     value={draft.timeOfDay}
                     onChange={(e) => updateDraft("timeOfDay", e.target.value as TimeOfDay)}
@@ -803,6 +893,8 @@ export function BookingWizard({
                       id="booking-city"
                       type="text"
                       maxLength={80}
+                      aria-invalid={Boolean(stepErrors.venueCity) || undefined}
+                      aria-describedby={stepErrors.venueCity ? "booking-city-error" : undefined}
                       className={INPUT_CLASSES}
                       placeholder="e.g. Accra, Kumasi, Takoradi"
                       value={draft.venueCity}
@@ -813,12 +905,15 @@ export function BookingWizard({
                   <FormField
                     id="booking-guest-count"
                     label="Estimated guests"
+                    error={stepErrors.guestCount}
                   >
                     <input
                       id="booking-guest-count"
                       type="number"
                       min={1}
                       max={20000}
+                      aria-invalid={Boolean(stepErrors.guestCount) || undefined}
+                      aria-describedby={stepErrors.guestCount ? "booking-guest-count-error" : undefined}
                       className={INPUT_CLASSES}
                       placeholder="e.g. 150"
                       value={draft.guestCount}
@@ -830,11 +925,14 @@ export function BookingWizard({
                 <FormField
                   id="booking-venue"
                   label="Venue or neighbourhood"
+                  error={stepErrors.venueText}
                 >
                   <input
                     id="booking-venue"
                     type="text"
                     maxLength={200}
+                    aria-invalid={Boolean(stepErrors.venueText) || undefined}
+                    aria-describedby={stepErrors.venueText ? "booking-venue-error" : undefined}
                     className={INPUT_CLASSES}
                     placeholder="e.g. Ridge Church or private home in East Legon"
                     value={draft.venueText}
@@ -877,6 +975,8 @@ export function BookingWizard({
                 id="booking-brief"
                 rows={5}
                 maxLength={4000}
+                aria-invalid={Boolean(stepErrors.brief) || undefined}
+                aria-describedby={stepErrors.brief ? "booking-brief-error" : "booking-brief-help"}
                 className={TEXTAREA_CLASSES}
                 placeholder="Share the flow of the day, key moments you care about, or what your design piece needs to say."
                 value={draft.brief}
@@ -888,13 +988,19 @@ export function BookingWizard({
               <FormField
                 id="booking-reference-input"
                 label="Reference links"
-                error={linkError ?? undefined}
+                error={linkError ?? stepErrors.referenceLinks}
                 helpText="Paste up to five web links (Instagram, Pinterest, Google Drive, YouTube) showing a look you like."
               >
                 <div className="flex gap-2">
                   <input
                     id="booking-reference-input"
                     type="url"
+                    aria-invalid={Boolean(linkError ?? stepErrors.referenceLinks) || undefined}
+                    aria-describedby={
+                      linkError || stepErrors.referenceLinks
+                        ? "booking-reference-input-error"
+                        : "booking-reference-input-help"
+                    }
                     className={INPUT_CLASSES}
                     placeholder="https://..."
                     value={newLinkInput}
@@ -935,7 +1041,7 @@ export function BookingWizard({
                             draft.referenceLinks.filter((_, i) => i !== idx)
                           )
                         }
-                        className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center text-[var(--grey)] hover:text-[var(--red)] cursor-pointer"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-[var(--grey)] hover:text-[var(--red)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)] cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </button>
@@ -1001,6 +1107,8 @@ export function BookingWizard({
                   type="text"
                   autoComplete="name"
                   maxLength={120}
+                  aria-invalid={Boolean(stepErrors.clientName) || undefined}
+                  aria-describedby={stepErrors.clientName ? "booking-client-name-error" : undefined}
                   className={INPUT_CLASSES}
                   placeholder="e.g. Kwame Boateng"
                   value={draft.clientName}
@@ -1019,6 +1127,10 @@ export function BookingWizard({
                   id="booking-client-phone"
                   type="tel"
                   autoComplete="tel"
+                  aria-invalid={Boolean(stepErrors.clientPhone) || undefined}
+                  aria-describedby={
+                    stepErrors.clientPhone ? "booking-client-phone-error" : "booking-client-phone-help"
+                  }
                   className={INPUT_CLASSES}
                   placeholder="e.g. 024 000 0000"
                   value={draft.clientPhone}
@@ -1039,6 +1151,10 @@ export function BookingWizard({
                   id="booking-client-email"
                   type="email"
                   autoComplete="email"
+                  aria-invalid={Boolean(stepErrors.clientEmail) || undefined}
+                  aria-describedby={
+                    stepErrors.clientEmail ? "booking-client-email-error" : "booking-client-email-help"
+                  }
                   className={INPUT_CLASSES}
                   placeholder="you@example.com"
                   value={draft.clientEmail}
@@ -1074,6 +1190,8 @@ export function BookingWizard({
                   id="booking-consent"
                   type="checkbox"
                   checked={draft.consentAccepted}
+                  aria-invalid={Boolean(stepErrors.consentAccepted) || undefined}
+                  aria-describedby={stepErrors.consentAccepted ? "booking-consent-error" : undefined}
                   onChange={(e) => updateDraft("consentAccepted", e.target.checked)}
                   className="mt-1 h-5 w-5 shrink-0 accent-[var(--cyan)]"
                 />
@@ -1098,7 +1216,7 @@ export function BookingWizard({
                 </span>
               </label>
               {stepErrors.consentAccepted && (
-                <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--red)]">
+                <p id="booking-consent-error" role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--red)]">
                   <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span>{stepErrors.consentAccepted}</span>
                 </p>

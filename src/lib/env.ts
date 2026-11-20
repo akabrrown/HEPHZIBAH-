@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 
 const serverEnvSchema = z.object({
@@ -21,6 +22,11 @@ const serverEnvSchema = z.object({
 
 let cachedServerEnv: z.infer<typeof serverEnvSchema> | null = null;
 
+declare global {
+  var __hephzibahEphemeralSessionSecret: string | undefined;
+  var __hephzibahEphemeralTokenPepper: string | undefined;
+}
+
 export function getServerEnv() {
   if (cachedServerEnv) return cachedServerEnv;
   const parsed = serverEnvSchema.safeParse(process.env);
@@ -39,14 +45,22 @@ export function getSessionSecret(): string {
   if (env.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET must be at least 32 characters in production");
   }
-  // Ephemeral deterministic secret for local development and automated testing only
-  return "hephzibah-local-dev-session-secret-change-in-prod-2026";
+  if (!globalThis.__hephzibahEphemeralSessionSecret) {
+    globalThis.__hephzibahEphemeralSessionSecret = crypto.randomBytes(32).toString("hex");
+  }
+  return globalThis.__hephzibahEphemeralSessionSecret;
 }
 
 export function getTokenPepper(): string {
   const env = getServerEnv();
-  if (env.TOKEN_HASH_PEPPER.length >= 16) {
+  if (env.TOKEN_HASH_PEPPER.length >= 32) {
     return env.TOKEN_HASH_PEPPER;
   }
-  return "hephzibah-local-token-pepper-2026";
+  if (env.NODE_ENV === "production") {
+    throw new Error("TOKEN_HASH_PEPPER must be at least 32 characters in production");
+  }
+  if (!globalThis.__hephzibahEphemeralTokenPepper) {
+    globalThis.__hephzibahEphemeralTokenPepper = crypto.randomBytes(32).toString("hex");
+  }
+  return globalThis.__hephzibahEphemeralTokenPepper;
 }

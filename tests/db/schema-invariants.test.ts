@@ -229,13 +229,19 @@ describe("PostgreSQL 16 schema invariants & RLS verification matrix", () => {
       )
     ).rejects.toThrow(/frozen/);
 
-    // Payment append-only
+    // Payment & booking_events append-only (UPDATE and DELETE blocked by triggers)
     const p = await db.query<{ id: string }>(
       `insert into payments (booking_id, method, amount_minor, received_at) values ($1, 'momo', 50000, now()) returning id`,
       [bId]
     );
     await expect(
       db.query(`update payments set amount_minor = 1000 where id = $1`, [p.rows[0]!.id])
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      db.query(`delete from payments where id = $1`, [p.rows[0]!.id])
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      db.query(`delete from booking_events where booking_id = $1`, [bId])
     ).rejects.toThrow(/append-only/);
 
     // Portfolio consent & alt text checks
@@ -301,7 +307,7 @@ describe("PostgreSQL 16 schema invariants & RLS verification matrix", () => {
       expect(b.rows).toHaveLength(0);
     });
 
-    // Bookings admin at aal2 reads bookings, but cannot insert into services (content scope required)
+    // Bookings admin at aal2 reads bookings + safe own admin columns, but cannot insert into services (content scope required)
     await db.transaction(async (tx) => {
       await tx.exec("set local role authenticated");
       await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [DEFAULT_BOOKINGS_ADMIN_ID]);
@@ -309,11 +315,33 @@ describe("PostgreSQL 16 schema invariants & RLS verification matrix", () => {
       const b = await tx.query(`select id from bookings`);
       expect(b.rows.length).toBeGreaterThan(0);
 
+      // Column-level isolation from 0004: safe columns readable for own row before any negative query aborts tx
+      const safeCols = await tx.query<{ id: string; email: string }>(
+        `select id, email from admin_users where id = $1`,
+        [DEFAULT_BOOKINGS_ADMIN_ID]
+      );
+      expect(safeCols.rows).toHaveLength(1);
+
       await expect(
         tx.query(
           `insert into services (kind, slug, name, summary) values ('photography', 'forbidden-svc', 'Forbidden', 'Should be blocked by RLS')`
         )
       ).rejects.toThrow(/row-level security policy/i);
+    });
+
+    // Each negative column-privilege test runs in its own transaction so an expected error does not abort siblings
+    await db.transaction(async (tx) => {
+      await tx.exec("set local role authenticated");
+      await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [DEFAULT_BOOKINGS_ADMIN_ID]);
+      await tx.query("select set_config('request.jwt.claim.aal', 'aal2', true)");
+      await expect(tx.query(`select password_hash from admin_users`)).rejects.toThrow(/permission denied/i);
+    });
+
+    await db.transaction(async (tx) => {
+      await tx.exec("set local role authenticated");
+      await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [DEFAULT_BOOKINGS_ADMIN_ID]);
+      await tx.query("select set_config('request.jwt.claim.aal', 'aal2', true)");
+      await expect(tx.query(`select totp_secret from admin_users`)).rejects.toThrow(/permission denied/i);
     });
   });
 

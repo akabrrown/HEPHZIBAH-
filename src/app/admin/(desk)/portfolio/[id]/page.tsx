@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { PortfolioDetailClient } from "@/components/admin/portfolio-manager-client";
 import { ScopeDenied } from "@/components/admin/scope-denied";
-import { requireAdmin } from "@/lib/auth";
 import { ProblemError } from "@/lib/errors";
+import { isUuid } from "@/lib/http";
 import { getPublicCatalogue } from "@/modules/catalog/service";
 import { getAdminPortfolioDetail } from "@/modules/portfolio/service";
 
@@ -13,14 +14,15 @@ export default async function AdminPortfolioDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  let admin;
-  try {
-    admin = await requireAdmin("content");
-  } catch {
+  const admin = await resolveAdminPageSession("content");
+  if (!admin) {
     return <ScopeDenied requiredScope="content" />;
   }
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    notFound();
+  }
 
   try {
     const [item, catalogue] = await Promise.all([

@@ -1,8 +1,9 @@
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
 import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { withAdminRole, withAnonRole } from "@/lib/db";
-import { ProblemError } from "@/lib/errors";
+import { ProblemError, rethrowKnownPgError } from "@/lib/errors";
 import type { ServiceKind } from "@/modules/catalog/schema";
 import {
   findAllFaqsAdmin,
@@ -17,6 +18,7 @@ import {
 import {
   faqUpsertSchema,
   mediaAssetCreateSchema,
+  mediaAssetPatchSchema,
   portfolioItemUpsertSchema,
   testimonialUpsertSchema,
   type FaqItem,
@@ -25,11 +27,11 @@ import {
   type Testimonial,
 } from "./schema";
 
-export async function getPublicPortfolioList(filters?: {
+export const getPublicPortfolioList = cache(async (filters?: {
   kind?: ServiceKind;
   occasionSlug?: string;
   featuredOnly?: boolean;
-}): Promise<PortfolioItem[]> {
+}): Promise<PortfolioItem[]> => {
   const cacheKey = `portfolio:list:${filters?.kind ?? "all"}:${filters?.occasionSlug ?? "all"}:${filters?.featuredOnly ? "feat" : "all"}`;
   const cached = getCached<PortfolioItem[]>(cacheKey);
   if (cached) return cached;
@@ -37,19 +39,21 @@ export async function getPublicPortfolioList(filters?: {
   const result = await withAnonRole((tx) => findPublishedPortfolioItems(tx, filters));
   setCached(cacheKey, result, 300);
   return result;
-}
+});
 
-export async function getPublicPortfolioDetail(slug: string): Promise<PortfolioItem | null> {
+export const getPublicPortfolioDetail = cache(async (slug: string): Promise<PortfolioItem | null> => {
   const cacheKey = `portfolio:detail:${slug}`;
   const cached = getCached<PortfolioItem | null>(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined && cached !== null) return cached;
 
   const result = await withAnonRole((tx) => findPortfolioItemBySlug(tx, slug));
-  setCached(cacheKey, result, 300);
+  if (result) {
+    setCached(cacheKey, result, 300);
+  }
   return result;
-}
+});
 
-export async function getPublicTestimonials(): Promise<Testimonial[]> {
+export const getPublicTestimonials = cache(async (): Promise<Testimonial[]> => {
   const cacheKey = "portfolio:testimonials";
   const cached = getCached<Testimonial[]>(cacheKey);
   if (cached) return cached;
@@ -57,9 +61,9 @@ export async function getPublicTestimonials(): Promise<Testimonial[]> {
   const result = await withAnonRole((tx) => findPublishedTestimonials(tx));
   setCached(cacheKey, result, 300);
   return result;
-}
+});
 
-export async function getPublicFaqs(): Promise<FaqItem[]> {
+export const getPublicFaqs = cache(async (): Promise<FaqItem[]> => {
   const cacheKey = "portfolio:faqs";
   const cached = getCached<FaqItem[]>(cacheKey);
   if (cached) return cached;
@@ -67,7 +71,7 @@ export async function getPublicFaqs(): Promise<FaqItem[]> {
   const result = await withAnonRole((tx) => findPublishedFaqs(tx));
   setCached(cacheKey, result, 300);
   return result;
-}
+});
 
 export async function listAdminPortfolio(admin: AdminSessionPayload): Promise<PortfolioItem[]> {
   return withAdminRole(admin.adminId, admin.aal, (tx) => findAllPortfolioAdmin(tx));
@@ -92,9 +96,13 @@ function revalidatePortfolioPaths(slug?: string): void {
     revalidatePath("/");
     revalidatePath("/portfolio");
     revalidatePath("/services");
+    revalidatePath("/services/photography");
+    revalidatePath("/services/videography");
+    revalidatePath("/services/design");
     revalidatePath("/about");
     revalidatePath("/testimonials");
     revalidatePath("/faq");
+    revalidatePath("/sitemap.xml");
     if (slug) {
       revalidatePath(`/portfolio/${slug}`);
     }
@@ -115,57 +123,97 @@ export async function upsertAdminPortfolioItem(
     });
   }
   const v = parsed.data;
-  const saved = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    if (v.id) {
-      const existing = await findPortfolioAdminById(tx, v.id);
-      if (!existing) {
-        throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
-      }
-      if (v.status === "published") {
-        const assets = existing.media_assets ?? [];
-        if (assets.length === 0) {
-          throw new ProblemError(
-            422,
-            "media_required",
-            "Add at least one image or video before publishing",
-            "Upload at least one image with alt text or add a video embed before publishing."
-          );
+  const { saved, previousSlug } = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    try {
+      if (v.id) {
+        const existing = await findPortfolioAdminById(tx, v.id);
+        if (!existing) {
+          throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
         }
-        const missingAlt = assets.some((a) => !a.alt_text || a.alt_text.trim().length === 0);
-        if (missingAlt) {
-          throw new ProblemError(
-            422,
-            "alt_text_required",
-            "Alt text missing",
-            "Every image or video poster needs descriptive alt text before publishing."
-          );
+        if (v.status === "published") {
+          const assets = existing.media_assets ?? [];
+          if (assets.length === 0) {
+            throw new ProblemError(
+              422,
+              "media_required",
+              "Add at least one image or video before publishing",
+              "Upload at least one image with alt text or add a video embed before publishing."
+            );
+          }
+          const missingAlt = assets.some((a) => !a.alt_text || a.alt_text.trim().length === 0);
+          if (missingAlt) {
+            throw new ProblemError(
+              422,
+              "alt_text_required",
+              "Alt text missing",
+              "Every image or video poster needs descriptive alt text before publishing."
+            );
+          }
         }
+
+        const publishedAt =
+          v.status === "published" ? existing.published_at ?? new Date().toISOString() : null;
+        const effectiveStatus = v.client_consent_to_publish ? v.status : "draft";
+        const res = await tx.query<PortfolioItem>(
+          `update portfolio_items
+              set kind = $2::service_kind,
+                  slug = $3,
+                  title = $4,
+                  summary = $5,
+                  occasion_id = $6::uuid,
+                  shot_on = $7::date,
+                  location_text = $8,
+                  status = $9::publish_status,
+                  is_featured = $10,
+                  sort_order = $11,
+                  client_consent_to_publish = $12,
+                  consent_note = $13,
+                  published_at = $14::timestamptz
+            where id = $1::uuid
+            returning id, kind, slug, title, summary, occasion_id, shot_on::text as shot_on,
+                      location_text, status, is_featured, sort_order, client_consent_to_publish,
+                      consent_note, published_at::text as published_at, created_at::text, updated_at::text`,
+          [
+            v.id,
+            v.kind,
+            v.slug,
+            v.title,
+            v.summary ?? null,
+            v.occasion_id ?? null,
+            v.shot_on ?? null,
+            v.location_text ?? null,
+            effectiveStatus,
+            v.is_featured,
+            v.sort_order,
+            v.client_consent_to_publish,
+            v.consent_note ?? null,
+            effectiveStatus === "published" ? publishedAt : null,
+          ]
+        );
+        return {
+          saved: res.rows[0]!,
+          previousSlug: existing.slug !== v.slug ? existing.slug : undefined,
+        };
       }
 
-      const publishedAt =
-        v.status === "published" ? existing.published_at ?? new Date().toISOString() : null;
-      const effectiveStatus = v.client_consent_to_publish ? v.status : "draft";
+      if (v.status === "published") {
+        throw new ProblemError(
+          422,
+          "media_required",
+          "Add media before publishing",
+          "Create the portfolio item as a draft, add images or video, then publish."
+        );
+      }
+
       const res = await tx.query<PortfolioItem>(
-        `update portfolio_items
-            set kind = $2::service_kind,
-                slug = $3,
-                title = $4,
-                summary = $5,
-                occasion_id = $6::uuid,
-                shot_on = $7::date,
-                location_text = $8,
-                status = $9::publish_status,
-                is_featured = $10,
-                sort_order = $11,
-                client_consent_to_publish = $12,
-                consent_note = $13,
-                published_at = $14::timestamptz
-          where id = $1::uuid
-          returning id, kind, slug, title, summary, occasion_id, shot_on::text as shot_on,
-                    location_text, status, is_featured, sort_order, client_consent_to_publish,
-                    consent_note, published_at::text as published_at, created_at::text, updated_at::text`,
+        `insert into portfolio_items (
+           kind, slug, title, summary, occasion_id, shot_on, location_text,
+           status, is_featured, sort_order, client_consent_to_publish, consent_note, published_at
+         ) values ($1::service_kind, $2, $3, $4, $5::uuid, $6::date, $7, 'draft', $8, $9, $10, $11, null)
+         returning id, kind, slug, title, summary, occasion_id, shot_on::text as shot_on,
+                   location_text, status, is_featured, sort_order, client_consent_to_publish,
+                   consent_note, published_at::text as published_at, created_at::text, updated_at::text`,
         [
-          v.id,
           v.kind,
           v.slug,
           v.title,
@@ -173,52 +221,25 @@ export async function upsertAdminPortfolioItem(
           v.occasion_id ?? null,
           v.shot_on ?? null,
           v.location_text ?? null,
-          effectiveStatus,
           v.is_featured,
           v.sort_order,
           v.client_consent_to_publish,
           v.consent_note ?? null,
-          effectiveStatus === "published" ? publishedAt : null,
         ]
       );
-      return res.rows[0]!;
+      return { saved: res.rows[0]!, previousSlug: undefined };
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        uniqueConflict: "A portfolio item with this slug already exists.",
+        foreignKey: "Selected occasion could not be found.",
+      });
     }
-
-    if (v.status === "published") {
-      throw new ProblemError(
-        422,
-        "media_required",
-        "Add media before publishing",
-        "Create the portfolio item as a draft, add images or video, then publish."
-      );
-    }
-
-    const res = await tx.query<PortfolioItem>(
-      `insert into portfolio_items (
-         kind, slug, title, summary, occasion_id, shot_on, location_text,
-         status, is_featured, sort_order, client_consent_to_publish, consent_note, published_at
-       ) values ($1::service_kind, $2, $3, $4, $5::uuid, $6::date, $7, 'draft', $8, $9, $10, $11, null)
-       returning id, kind, slug, title, summary, occasion_id, shot_on::text as shot_on,
-                 location_text, status, is_featured, sort_order, client_consent_to_publish,
-                 consent_note, published_at::text as published_at, created_at::text, updated_at::text`,
-      [
-        v.kind,
-        v.slug,
-        v.title,
-        v.summary ?? null,
-        v.occasion_id ?? null,
-        v.shot_on ?? null,
-        v.location_text ?? null,
-        v.is_featured,
-        v.sort_order,
-        v.client_consent_to_publish,
-        v.consent_note ?? null,
-      ]
-    );
-    return res.rows[0]!;
   });
 
   revalidatePortfolioPaths(saved.slug);
+  if (previousSlug) {
+    revalidatePortfolioPaths(previousSlug);
+  }
   return saved;
 }
 
@@ -234,43 +255,55 @@ export async function addAdminMediaAsset(
     });
   }
   const v = parsed.data;
-  const asset = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    if (v.is_cover) {
-      await tx.query(
-        `update media_assets set is_cover = false where portfolio_item_id = $1::uuid and is_cover = true`,
+  const { asset, slug } = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    try {
+      const parentRes = await tx.query<{ slug: string }>(
+        `select slug from portfolio_items where id = $1::uuid`,
         [portfolioItemId]
       );
+      if (!parentRes.rows[0]) {
+        throw new ProblemError(404, "not_found", "Portfolio item not found", "No portfolio item matches that ID.");
+      }
+
+      if (v.is_cover) {
+        await tx.query(
+          `update media_assets set is_cover = false where portfolio_item_id = $1::uuid and is_cover = true`,
+          [portfolioItemId]
+        );
+      }
+      const res = await tx.query<MediaAsset>(
+        `insert into media_assets (
+           portfolio_item_id, type, position, is_cover, cloudinary_public_id, poster_public_id,
+           width, height, alt_text, video_provider, video_id, duration_seconds, caption
+         ) values (
+           $1::uuid, $2::media_type, $3, $4, $5, $6,
+           $7, $8, $9, $10::video_provider, $11, $12, $13
+         )
+         returning id, portfolio_item_id, type, position, is_cover, cloudinary_public_id, poster_public_id,
+                   width, height, alt_text, video_provider, video_id, duration_seconds, caption, created_at::text`,
+        [
+          portfolioItemId,
+          v.type,
+          v.position,
+          v.is_cover,
+          v.cloudinary_public_id ?? null,
+          v.poster_public_id ?? null,
+          v.width ?? null,
+          v.height ?? null,
+          v.alt_text ?? null,
+          v.video_provider ?? null,
+          v.video_id ?? null,
+          v.duration_seconds ?? null,
+          v.caption ?? null,
+        ]
+      );
+      return { asset: res.rows[0]!, slug: parentRes.rows[0].slug };
+    } catch (err) {
+      rethrowKnownPgError(err);
     }
-    const res = await tx.query<MediaAsset>(
-      `insert into media_assets (
-         portfolio_item_id, type, position, is_cover, cloudinary_public_id, poster_public_id,
-         width, height, alt_text, video_provider, video_id, duration_seconds, caption
-       ) values (
-         $1::uuid, $2::media_type, $3, $4, $5, $6,
-         $7, $8, $9, $10::video_provider, $11, $12, $13
-       )
-       returning id, portfolio_item_id, type, position, is_cover, cloudinary_public_id, poster_public_id,
-                 width, height, alt_text, video_provider, video_id, duration_seconds, caption, created_at::text`,
-      [
-        portfolioItemId,
-        v.type,
-        v.position,
-        v.is_cover,
-        v.cloudinary_public_id ?? null,
-        v.poster_public_id ?? null,
-        v.width ?? null,
-        v.height ?? null,
-        v.alt_text ?? null,
-        v.video_provider ?? null,
-        v.video_id ?? null,
-        v.duration_seconds ?? null,
-        v.caption ?? null,
-      ]
-    );
-    return res.rows[0]!;
   });
 
-  revalidatePortfolioPaths();
+  revalidatePortfolioPaths(slug);
   return asset;
 }
 
@@ -278,44 +311,65 @@ export async function updateAdminMediaAsset(
   admin: AdminSessionPayload,
   portfolioItemId: string,
   mediaId: string,
-  updates: { is_cover?: boolean; position?: number; alt_text?: string; caption?: string | null }
+  rawUpdates: unknown
 ): Promise<void> {
-  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    if (updates.is_cover) {
-      await tx.query(
-        `update media_assets set is_cover = false where portfolio_item_id = $1::uuid and is_cover = true`,
+  const parsed = mediaAssetPatchSchema.safeParse(rawUpdates);
+  if (!parsed.success) {
+    throw new ProblemError(422, "validation_error", "Check media updates", "Invalid media asset update.", {
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+  const updates = parsed.data;
+
+  const slug = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    try {
+      const parentRes = await tx.query<{ slug: string }>(
+        `select slug from portfolio_items where id = $1::uuid`,
         [portfolioItemId]
       );
-    }
-    const sets: string[] = [];
-    const params: unknown[] = [mediaId, portfolioItemId];
-    if (typeof updates.is_cover === "boolean") {
-      params.push(updates.is_cover);
-      sets.push(`is_cover = $${params.length}`);
-    }
-    if (typeof updates.position === "number") {
-      params.push(updates.position);
-      sets.push(`position = $${params.length}`);
-    }
-    if (typeof updates.alt_text === "string") {
-      if (updates.alt_text.trim().length === 0) {
-        throw new ProblemError(422, "alt_text_required", "Alt text cannot be empty", "Provide descriptive alt text.");
+      if (!parentRes.rows[0]) {
+        throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
       }
-      params.push(updates.alt_text.trim());
-      sets.push(`alt_text = $${params.length}`);
-    }
-    if (updates.caption !== undefined) {
-      params.push(updates.caption);
-      sets.push(`caption = $${params.length}`);
-    }
-    if (sets.length > 0) {
-      await tx.query(
-        `update media_assets set ${sets.join(", ")} where id = $1::uuid and portfolio_item_id = $2::uuid`,
-        params
-      );
+
+      if (updates.is_cover) {
+        await tx.query(
+          `update media_assets set is_cover = false where portfolio_item_id = $1::uuid and is_cover = true`,
+          [portfolioItemId]
+        );
+      }
+      const sets: string[] = [];
+      const params: unknown[] = [mediaId, portfolioItemId];
+      if (typeof updates.is_cover === "boolean") {
+        params.push(updates.is_cover);
+        sets.push(`is_cover = $${params.length}`);
+      }
+      if (typeof updates.position === "number") {
+        params.push(updates.position);
+        sets.push(`position = $${params.length}`);
+      }
+      if (typeof updates.alt_text === "string") {
+        params.push(updates.alt_text);
+        sets.push(`alt_text = $${params.length}`);
+      }
+      if (updates.caption !== undefined) {
+        params.push(updates.caption);
+        sets.push(`caption = $${params.length}`);
+      }
+      if (sets.length > 0) {
+        const res = await tx.query<{ id: string }>(
+          `update media_assets set ${sets.join(", ")} where id = $1::uuid and portfolio_item_id = $2::uuid returning id`,
+          params
+        );
+        if (!res.rows[0]) {
+          throw new ProblemError(404, "not_found", "Media asset not found", "No media asset matches that ID.");
+        }
+      }
+      return parentRes.rows[0].slug;
+    } catch (err) {
+      rethrowKnownPgError(err);
     }
   });
-  revalidatePortfolioPaths();
+  revalidatePortfolioPaths(slug);
 }
 
 export async function deleteAdminMediaAsset(
@@ -323,28 +377,55 @@ export async function deleteAdminMediaAsset(
   portfolioItemId: string,
   mediaId: string
 ): Promise<void> {
-  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    await tx.query(
-      `delete from media_assets where id = $1::uuid and portfolio_item_id = $2::uuid`,
+  const slug = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
+    const stateRes = await tx.query<{ status: string; slug: string; asset_count: number }>(
+      `select pi.status::text as status, pi.slug,
+              (select count(*)::int from media_assets m where m.portfolio_item_id = pi.id) as asset_count
+         from portfolio_items pi
+        where pi.id = $1::uuid`,
+      [portfolioItemId]
+    );
+    const parent = stateRes.rows[0];
+    if (!parent) {
+      throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
+    }
+    if (parent.status === "published" && parent.asset_count <= 1) {
+      throw new ProblemError(
+        409,
+        "last_media_asset",
+        "Cannot delete the only media asset",
+        "Published portfolio items require at least one image or video. Revert to draft or add replacement media first."
+      );
+    }
+
+    const res = await tx.query<{ id: string }>(
+      `delete from media_assets where id = $1::uuid and portfolio_item_id = $2::uuid returning id`,
       [mediaId, portfolioItemId]
     );
+    if (!res.rows[0]) {
+      throw new ProblemError(404, "not_found", "Media asset not found", "No media asset matches that ID.");
+    }
+    return parent.slug;
   });
-  revalidatePortfolioPaths();
+  revalidatePortfolioPaths(slug);
 }
 
 export async function deleteAdminPortfolioItem(
   admin: AdminSessionPayload,
   id: string
 ): Promise<void> {
-  await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    // Delete media assets first (even though cascade is present) to guarantee clean cleanup
+  const slug = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
     await tx.query(`delete from media_assets where portfolio_item_id = $1::uuid`, [id]);
-    const res = await tx.query(`delete from portfolio_items where id = $1::uuid returning id`, [id]);
+    const res = await tx.query<{ id: string; slug: string }>(
+      `delete from portfolio_items where id = $1::uuid returning id, slug`,
+      [id]
+    );
     if (!res.rows[0]) {
       throw new ProblemError(404, "not_found", "Portfolio item not found", "No item matches that ID.");
     }
+    return res.rows[0].slug;
   });
-  revalidatePortfolioPaths();
+  revalidatePortfolioPaths(slug);
 }
 
 export async function listAdminContent(admin: AdminSessionPayload): Promise<{
@@ -373,15 +454,36 @@ export async function upsertAdminTestimonial(
   const v = parsed.data;
   const saved = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
     const effectiveStatus = v.consent_to_publish ? v.status : "draft";
-    if (v.id) {
+    try {
+      if (v.id) {
+        const res = await tx.query<Testimonial>(
+          `update testimonials
+              set author_name = $2, author_context = $3, quote = $4, booking_id = $5::uuid,
+                  consent_to_publish = $6, status = $7::publish_status, sort_order = $8
+            where id = $1::uuid
+            returning id, author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order, created_at::text, updated_at::text`,
+          [
+            v.id,
+            v.author_name,
+            v.author_context ?? null,
+            v.quote,
+            v.booking_id ?? null,
+            v.consent_to_publish,
+            effectiveStatus,
+            v.sort_order,
+          ]
+        );
+        if (!res.rows[0]) {
+          throw new ProblemError(404, "not_found", "Testimonial not found", "No testimonial matches that ID.");
+        }
+        return res.rows[0];
+      }
+
       const res = await tx.query<Testimonial>(
-        `update testimonials
-            set author_name = $2, author_context = $3, quote = $4, booking_id = $5::uuid,
-                consent_to_publish = $6, status = $7::publish_status, sort_order = $8
-          where id = $1::uuid
-          returning id, author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order, created_at::text, updated_at::text`,
+        `insert into testimonials (author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order)
+         values ($1, $2, $3, $4::uuid, $5, $6::publish_status, $7)
+         returning id, author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order, created_at::text, updated_at::text`,
         [
-          v.id,
           v.author_name,
           v.author_context ?? null,
           v.quote,
@@ -391,27 +493,12 @@ export async function upsertAdminTestimonial(
           v.sort_order,
         ]
       );
-      if (!res.rows[0]) {
-        throw new ProblemError(404, "not_found", "Testimonial not found", "No testimonial matches that ID.");
-      }
-      return res.rows[0];
+      return res.rows[0]!;
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        foreignKey: "Referenced booking was not found.",
+      });
     }
-
-    const res = await tx.query<Testimonial>(
-      `insert into testimonials (author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order)
-       values ($1, $2, $3, $4::uuid, $5, $6::publish_status, $7)
-       returning id, author_name, author_context, quote, booking_id, consent_to_publish, status, sort_order, created_at::text, updated_at::text`,
-      [
-        v.author_name,
-        v.author_context ?? null,
-        v.quote,
-        v.booking_id ?? null,
-        v.consent_to_publish,
-        effectiveStatus,
-        v.sort_order,
-      ]
-    );
-    return res.rows[0]!;
   });
   revalidatePortfolioPaths();
   return saved;

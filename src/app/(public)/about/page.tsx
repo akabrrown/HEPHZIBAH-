@@ -4,7 +4,7 @@ import { PageHeading } from "@/components/ui/page-heading";
 import { ShotCaption } from "@/components/ui/viewfinder";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 
-export const revalidate = 300;
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "About",
@@ -24,10 +24,7 @@ export default async function AboutPage() {
             ghostTitle="ABOUT"
             description="Prepared before the day begins, quiet while it unfolds. Event photography, multi-camera videography, and graphic design across Ghana."
           />
-          <h2 className="font-display text-xl font-bold text-[var(--white)] pt-2">
-            Prepared before the day begins, quiet while it unfolds.
-          </h2>
-          <p className="text-base leading-relaxed text-[var(--grey)]">
+          <p className="text-base leading-relaxed text-[var(--grey)] pt-2">
             {settings.business_name} is a Ghanaian visual studio built around three linked crafts: event and commercial photography, multi-camera videography, and graphic design. We handle occasions where dates are fixed and emotion runs high — weddings, traditional marriages, outdoorings, and memorials — alongside corporate conferences and brand launches.
           </p>
         </div>

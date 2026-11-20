@@ -3,7 +3,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { WelcomeSplash } from "@/components/layout/welcome-splash";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 
-export const revalidate = 300;
+export const revalidate = 3600;
 
 export default async function PublicLayout({ children }: { children: React.ReactNode }) {
   const settings = await getPublicSiteSettings();
@@ -26,12 +26,25 @@ export default async function PublicLayout({ children }: { children: React.React
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--black)] text-[var(--white)]">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-[2px] focus:bg-[var(--cyan)] focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-[var(--btn-action-text)]"
+      >
+        Skip to main content
+      </a>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(localBusinessJsonLd).replace(/</g, "\\u003c"),
+        }}
       />
       <WelcomeSplash businessName={settings.business_name} />
-      <SiteHeader businessName={settings.business_name} whatsappE164={settings.whatsapp_e164} />
+      <SiteHeader
+        businessName={settings.business_name}
+        whatsappE164={settings.whatsapp_e164}
+        instagramUrl={settings.social?.instagram}
+        tiktokUrl={settings.social?.tiktok}
+      />
       <main id="main-content" className="flex-1">
         {children}
       </main>

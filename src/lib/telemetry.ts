@@ -1,14 +1,24 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * In-Memory Telemetry & Performance Monitoring
  *
  * Lightweight, zero-cost observability for Next.js and PostgreSQL.
  * Tracks:
  * - Most frequently called API routes
- * - Slowest API endpoints (avg and max latency)
+ * - Slowest API endpoints (avg, p95, and max latency)
  * - Requests Per Minute (RPM) sliding window
  * - Database query duration and slowest queries
  * - CPU and memory consumption per function execution
+ * - Per-request AsyncLocalStorage DB timing for Server-Timing headers
  */
+
+interface RequestTelemetryContext {
+  dbMs: number;
+  dbCount: number;
+}
+
+const requestTelemetryStorage = new AsyncLocalStorage<RequestTelemetryContext>();
 
 interface RouteMetric {
   route: string;
@@ -16,6 +26,7 @@ interface RouteMetric {
   totalDurationMs: number;
   minDurationMs: number;
   maxDurationMs: number;
+  samples: number[];
   lastCalledAt: string;
 }
 
@@ -38,6 +49,8 @@ interface TelemetryStore {
 
 const MAX_RPM_WINDOW_MS = 60_000; // 1 minute window for current RPM
 const MAX_SLOW_QUERIES_STORED = 20;
+const MAX_ROUTE_SAMPLES = 100;
+const MAX_TRACKED_ROUTES = 200;
 
 const store: TelemetryStore = {
   routes: new Map<string, RouteMetric>(),
@@ -50,6 +63,57 @@ const store: TelemetryStore = {
   serverStartedAt: Date.now(),
 };
 
+function computeP95(samples: number[]): number {
+  if (samples.length === 0) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
+  return Math.round((sorted[idx] ?? 0) * 100) / 100;
+}
+
+export function attachServerTiming<T extends Response>(
+  res: T,
+  metrics: { appMs: number; dbMs: number; cpuMs: number }
+): T {
+  const header = `app;dur=${metrics.appMs.toFixed(2)}, db;dur=${metrics.dbMs.toFixed(2)}, cpu;dur=${metrics.cpuMs.toFixed(2)}`;
+  try {
+    res.headers.set("Server-Timing", header);
+    return res;
+  } catch {
+    const headers = new Headers(res.headers);
+    headers.set("Server-Timing", header);
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    }) as T;
+  }
+}
+
+export async function withApiTelemetry<T extends Response>(
+  method: string,
+  routePattern: string,
+  handler: () => Promise<T>
+): Promise<T> {
+  const ctx: RequestTelemetryContext = { dbMs: 0, dbCount: 0 };
+  const startMs = performance.now();
+  const startCpu = process.cpuUsage();
+
+  return await requestTelemetryStorage.run(ctx, async () => {
+    try {
+      const response = await handler();
+      const appMs = Math.max(0, performance.now() - startMs);
+      const cpuDelta = process.cpuUsage(startCpu);
+      const cpuMs = Math.max(0, (cpuDelta.user + cpuDelta.system) / 1000);
+      recordApiRequest(method, routePattern, appMs);
+      return attachServerTiming(response, { appMs, dbMs: ctx.dbMs, cpuMs });
+    } catch (err) {
+      const appMs = Math.max(0, performance.now() - startMs);
+      recordApiRequest(method, routePattern, appMs);
+      throw err;
+    }
+  });
+}
+
 /**
  * Records an HTTP API request execution with latency.
  */
@@ -60,7 +124,7 @@ export function recordApiRequest(
   nowMs: number = Date.now()
 ): void {
   const routeKey = `${method.toUpperCase()} ${pathname}`;
-  
+
   // Track RPM timestamps
   store.requestTimestamps.push(nowMs);
   const cutoff = nowMs - MAX_RPM_WINDOW_MS;
@@ -72,12 +136,17 @@ export function recordApiRequest(
   // Update route metrics
   const existing = store.routes.get(routeKey);
   if (!existing) {
+    if (store.routes.size >= MAX_TRACKED_ROUTES) {
+      const oldestKey = store.routes.keys().next().value;
+      if (oldestKey) store.routes.delete(oldestKey);
+    }
     store.routes.set(routeKey, {
       route: routeKey,
       count: 1,
       totalDurationMs: durationMs,
       minDurationMs: durationMs,
       maxDurationMs: durationMs,
+      samples: [durationMs],
       lastCalledAt: new Date(nowMs).toISOString(),
     });
   } else {
@@ -85,6 +154,10 @@ export function recordApiRequest(
     existing.totalDurationMs += durationMs;
     existing.minDurationMs = Math.min(existing.minDurationMs, durationMs);
     existing.maxDurationMs = Math.max(existing.maxDurationMs, durationMs);
+    if (existing.samples.length >= MAX_ROUTE_SAMPLES) {
+      existing.samples.shift();
+    }
+    existing.samples.push(durationMs);
     existing.lastCalledAt = new Date(nowMs).toISOString();
   }
 }
@@ -97,14 +170,24 @@ export function recordDbQuery(
   durationMs: number,
   nowMs: number = Date.now()
 ): void {
+  const activeReq = requestTelemetryStorage.getStore();
+  if (activeReq) {
+    activeReq.dbMs += durationMs;
+    activeReq.dbCount += 1;
+  }
+
   store.dbQueries.totalCount += 1;
   store.dbQueries.totalDurationMs += durationMs;
+
+  const slowList = store.dbQueries.slowestQueries;
+  const minSlow = slowList[slowList.length - 1]?.durationMs ?? -1;
+  if (slowList.length >= MAX_SLOW_QUERIES_STORED && durationMs <= minSlow) {
+    return;
+  }
 
   // Clean / normalize query string for telemetry (collapse whitespace, strip long values)
   const normalized = sqlText.replace(/\s+/g, " ").trim().slice(0, 160);
 
-  // If query is slow (> 10ms or amongst top slowest)
-  const slowList = store.dbQueries.slowestQueries;
   slowList.push({
     querySummary: normalized,
     durationMs: Math.round(durationMs * 100) / 100,
@@ -174,6 +257,7 @@ export interface TelemetrySummary {
       route: string;
       count: number;
       avgDurationMs: number;
+      p95DurationMs: number;
       maxDurationMs: number;
       minDurationMs: number;
     }>;
@@ -231,6 +315,7 @@ export function getTelemetryMetrics(nowMs: number = Date.now()): TelemetrySummar
       route: r.route,
       count: r.count,
       avgDurationMs: Math.round((r.totalDurationMs / r.count) * 100) / 100,
+      p95DurationMs: computeP95(r.samples),
       maxDurationMs: Math.round(r.maxDurationMs * 100) / 100,
       minDurationMs: Math.round(r.minDurationMs * 100) / 100,
     }));

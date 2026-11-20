@@ -258,18 +258,20 @@ export function TeamClient({
                   <div className="flex flex-wrap gap-2">
                     {adminScopeValues.map((scope) => {
                       const has = member.scopes.includes(scope);
+                      const isOnlyScope = has && member.scopes.length <= 1;
                       return (
                         <button
                           key={scope}
                           type="button"
-                          disabled={busyId === member.id}
+                          disabled={busyId === member.id || isOnlyScope}
+                          title={isOnlyScope ? "At least one scope must remain assigned." : undefined}
                           onClick={() => {
                             const nextScopes = has
                               ? member.scopes.filter((s) => s !== scope)
                               : [...member.scopes, scope];
                             void patchMember(member, { scopes: nextScopes });
                           }}
-                          className={`min-h-[44px] border px-3 text-xs font-mono-meta uppercase cursor-pointer ${
+                          className={`min-h-[44px] border px-3 text-xs font-mono-meta uppercase cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                             has
                               ? "border-[var(--cyan)] bg-[var(--black)] text-[var(--cyan)]"
                               : "border-[var(--control-border)] text-[var(--grey)] hover:border-[var(--white)]"
@@ -286,16 +288,35 @@ export function TeamClient({
                   <button
                     type="button"
                     disabled={busyId === member.id}
-                    onClick={() => patchMember(member, { is_active: !member.is_active })}
-                    className="min-h-[44px] border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--red)] hover:text-[var(--red)] cursor-pointer"
+                    onClick={() => {
+                      if (
+                        member.is_active &&
+                        !window.confirm(
+                          `Deactivate ${member.display_name} (${member.email})? They will immediately lose admin console access.`
+                        )
+                      ) {
+                        return;
+                      }
+                      void patchMember(member, { is_active: !member.is_active });
+                    }}
+                    className="min-h-[44px] border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--red)] hover:text-[var(--red)] cursor-pointer disabled:opacity-50"
                   >
                     {member.is_active ? "Deactivate account" : "Reactivate account"}
                   </button>
                   <button
                     type="button"
                     disabled={busyId === member.id}
-                    onClick={() => patchMember(member, { reset_totp: true })}
-                    className="min-h-[44px] border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] cursor-pointer"
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Rotate the authenticator secret for ${member.display_name}? Their current TOTP code setup will stop working immediately.`
+                        )
+                      ) {
+                        return;
+                      }
+                      void patchMember(member, { reset_totp: true });
+                    }}
+                    className="min-h-[44px] border border-[var(--control-border)] px-3 text-xs font-medium text-[var(--white)] hover:border-[var(--cyan)] hover:text-[var(--cyan)] cursor-pointer disabled:opacity-50"
                   >
                     Rotate authenticator secret
                   </button>

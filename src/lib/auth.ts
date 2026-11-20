@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { getServerEnv, getSessionSecret } from "@/lib/env";
 import { ProblemError } from "@/lib/errors";
@@ -10,6 +11,55 @@ export type AuthAal = "aal1" | "aal2";
 
 export const ADMIN_SESSION_COOKIE = "hm_admin_session";
 const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8 hours inactivity / session lifetime
+const MAX_REVOKED_JTIS = 5000;
+const MAX_TOTP_TRACKED_ADMINS = 1000;
+
+declare global {
+  var __hephzibahRevokedJtis: Map<string, number> | undefined;
+  var __hephzibahLastTotpStep: Map<string, number> | undefined;
+}
+
+function getRevokedJtiStore(): Map<string, number> {
+  if (!globalThis.__hephzibahRevokedJtis) {
+    globalThis.__hephzibahRevokedJtis = new Map<string, number>();
+  }
+  return globalThis.__hephzibahRevokedJtis;
+}
+
+function getLastTotpStepStore(): Map<string, number> {
+  if (!globalThis.__hephzibahLastTotpStep) {
+    globalThis.__hephzibahLastTotpStep = new Map<string, number>();
+  }
+  return globalThis.__hephzibahLastTotpStep;
+}
+
+export function revokeSessionJti(jti: string, expUnixSeconds: number): void {
+  if (!jti) return;
+  const store = getRevokedJtiStore();
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (store.size >= MAX_REVOKED_JTIS) {
+    for (const [k, exp] of store.entries()) {
+      if (exp < nowSec) store.delete(k);
+    }
+    while (store.size >= MAX_REVOKED_JTIS) {
+      const oldest = store.keys().next().value;
+      if (!oldest) break;
+      store.delete(oldest);
+    }
+  }
+  store.set(jti, expUnixSeconds);
+}
+
+export function isSessionJtiRevoked(jti: string): boolean {
+  const store = getRevokedJtiStore();
+  const exp = store.get(jti);
+  if (exp === undefined) return false;
+  if (exp < Math.floor(Date.now() / 1000)) {
+    store.delete(jti);
+    return false;
+  }
+  return true;
+}
 
 export interface AdminSessionPayload {
   adminId: string;
@@ -19,7 +69,6 @@ export interface AdminSessionPayload {
   aal: AuthAal;
   exp: number;
   jti: string;
-  totpHint?: string;
 }
 
 export function hashPassword(password: string): string {
@@ -49,21 +98,22 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 
 export async function isPasswordBreached(password: string): Promise<boolean> {
   if (getServerEnv().NODE_ENV === "test") return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
   try {
     const sha1 = crypto.createHash("sha1").update(password).digest("hex").toUpperCase();
     const prefix = sha1.slice(0, 5);
     const suffix = sha1.slice(5);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1500);
     const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!response.ok) return false;
     const text = await response.text();
     return text.split("\n").some((line) => line.startsWith(`${suffix}:`));
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -103,20 +153,44 @@ export function generateTotpCode(secretBase32: string, timestampMs: number = Dat
   return String(otp).padStart(6, "0");
 }
 
+export function verifyTotpCodeWithStep(
+  secretBase32: string,
+  code: string,
+  timestampMs: number = Date.now()
+): { valid: boolean; step: number } {
+  const normalized = code.replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(normalized)) return { valid: false, step: 0 };
+  const baseStep = Math.floor(timestampMs / 1000 / 30);
+  for (const drift of [-1, 0, 1]) {
+    const stepMs = timestampMs + drift * 30_000;
+    const candidate = generateTotpCode(secretBase32, stepMs);
+    if (safeCompare(candidate, normalized)) {
+      return { valid: true, step: baseStep + drift };
+    }
+  }
+  return { valid: false, step: 0 };
+}
+
 export function verifyTotpCode(
   secretBase32: string,
   code: string,
   timestampMs: number = Date.now()
 ): boolean {
-  const normalized = code.replace(/\s+/g, "");
-  if (!/^\d{6}$/.test(normalized)) return false;
-  for (const drift of [-1, 0, 1]) {
-    const candidate = generateTotpCode(secretBase32, timestampMs + drift * 30_000);
-    if (safeCompare(candidate, normalized)) {
-      return true;
-    }
+  return verifyTotpCodeWithStep(secretBase32, code, timestampMs).valid;
+}
+
+export function claimTotpStep(adminId: string, step: number): boolean {
+  const store = getLastTotpStepStore();
+  const last = store.get(adminId);
+  if (last !== undefined && step <= last) {
+    return false;
   }
-  return false;
+  if (store.size >= MAX_TOTP_TRACKED_ADMINS) {
+    const oldest = store.keys().next().value;
+    if (oldest) store.delete(oldest);
+  }
+  store.set(adminId, step);
+  return true;
 }
 
 export function signSessionToken(payload: AdminSessionPayload): string {
@@ -145,6 +219,9 @@ export function verifySessionToken(token: string): AdminSessionPayload | null {
     if (!decoded.adminId || !decoded.exp || decoded.exp < Math.floor(Date.now() / 1000)) {
       return null;
     }
+    if (decoded.jti && isSessionJtiRevoked(decoded.jti)) {
+      return null;
+    }
     return decoded;
   } catch {
     return null;
@@ -168,6 +245,21 @@ export async function getAdminSession(): Promise<AdminSessionPayload | null> {
   return verifySessionToken(rawCookie);
 }
 
+const loadAdminRecordCached = cache(async (adminId: string) => {
+  return withServiceRole(async (tx) => {
+    const res = await tx.query<{
+      id: string;
+      display_name: string;
+      scopes: AdminScope[];
+      is_active: boolean;
+    }>(
+      `select id, display_name, scopes, is_active from admin_users where id = $1`,
+      [adminId]
+    );
+    return res.rows[0] ?? null;
+  });
+});
+
 export async function requireAdmin(requiredScope?: AdminScope): Promise<AdminSessionPayload> {
   const session = await getAdminSession();
   if (!session) {
@@ -182,18 +274,7 @@ export async function requireAdmin(requiredScope?: AdminScope): Promise<AdminSes
     );
   }
 
-  const dbAdmin = await withServiceRole(async (tx) => {
-    const res = await tx.query<{
-      id: string;
-      display_name: string;
-      scopes: AdminScope[];
-      is_active: boolean;
-    }>(
-      `select id, display_name, scopes, is_active from admin_users where id = $1`,
-      [session.adminId]
-    );
-    return res.rows[0] ?? null;
-  });
+  const dbAdmin = await loadAdminRecordCached(session.adminId);
 
   if (!dbAdmin || !dbAdmin.is_active) {
     throw new ProblemError(

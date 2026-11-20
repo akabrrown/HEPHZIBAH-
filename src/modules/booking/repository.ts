@@ -82,7 +82,7 @@ export async function findBookingEvents(
   clientVisibleOnly = false
 ): Promise<BookingEventRecord[]> {
   const res = await tx.query<BookingEventRecord>(
-    `select e.id, e.booking_id, e.actor_type, e.actor_id, a.display_name as actor_name,
+    `select e.id::int as id, e.booking_id, e.actor_type, e.actor_id, a.display_name as actor_name,
             e.event_type, e.from_status, e.to_status, e.note, e.visible_to_client,
             e.created_at::text as created_at
        from booking_events e
@@ -127,11 +127,12 @@ export async function findAdminBookings(
     clauses.push(`coalesce(b.event_date, b.deadline, b.created_at::date) <= $${params.length}::date`);
   }
   if (filters.q && filters.q.trim().length > 0) {
-    const q = `%${filters.q.trim()}%`;
+    const escaped = filters.q.trim().replace(/[\\%_]/g, "\\$&");
+    const q = `%${escaped}%`;
     params.push(q);
     const idx = params.length;
     clauses.push(
-      `(b.reference ilike $${idx} or b.client_name ilike $${idx} or b.client_email::text ilike $${idx} or regexp_replace(b.client_phone, '[^0-9]', '', 'g') ilike $${idx})`
+      `(b.reference ilike $${idx} escape '\\' or b.client_name ilike $${idx} escape '\\' or b.client_email::text ilike $${idx} escape '\\' or regexp_replace(b.client_phone, '[^0-9]', '', 'g') ilike $${idx} escape '\\')`
     );
   }
   if (filters.cursor) {
@@ -139,7 +140,7 @@ export async function findAdminBookings(
     clauses.push(`b.created_at < $${params.length}::timestamptz`);
   }
 
-  const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
+  const limit = Math.min(Math.max(filters.limit ?? 30, 1), 1000);
   params.push(limit + 1);
 
   const res = await tx.query<BookingRecord>(

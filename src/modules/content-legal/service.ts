@@ -1,9 +1,10 @@
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import type { AdminSessionPayload } from "@/lib/auth";
 import { getCached, invalidateCache, setCached } from "@/lib/cache";
 import { normalizeGhanaPhone } from "@/lib/dates";
 import { withAdminRole, withAnonRole, withServiceRole } from "@/lib/db";
-import { ProblemError } from "@/lib/errors";
+import { ProblemError, rethrowKnownPgError } from "@/lib/errors";
 import { isHoneypotTriggered } from "@/lib/rate-limit";
 import { findSiteSettings } from "@/modules/catalog/repository";
 import { enqueueOutboxEmail } from "@/modules/notify/repository";
@@ -25,10 +26,10 @@ import {
   type LegalSlug,
 } from "./schema";
 
-export async function getPublicLegalDocument(slug: LegalSlug): Promise<{
+export const getPublicLegalDocument = cache(async (slug: LegalSlug): Promise<{
   current: LegalDocumentRecord | null;
   history: LegalDocumentRecord[];
-}> {
+}> => {
   const cacheKey = `legal:doc:${slug}`;
   const cached = getCached<{
     current: LegalDocumentRecord | null;
@@ -46,13 +47,13 @@ export async function getPublicLegalDocument(slug: LegalSlug): Promise<{
 
   setCached(cacheKey, result, 600);
   return result;
-}
+});
 
-export async function getPublicPolicyVersions(): Promise<{
+export const getPublicPolicyVersions = cache(async (): Promise<{
   privacyVersion: string;
   termsVersion: string;
   bookingPolicyVersion: string;
-}> {
+}> => {
   const cacheKey = "legal:policy_versions";
   const cached = getCached<{
     privacyVersion: string;
@@ -70,7 +71,7 @@ export async function getPublicPolicyVersions(): Promise<{
 
   setCached(cacheKey, result, 600);
   return result;
-}
+});
 
 export async function submitPublicEnquiry(rawInput: unknown): Promise<{
   accepted: boolean;
@@ -168,13 +169,19 @@ export async function publishAdminLegalDocument(
   }
   const v = parsed.data;
   const saved = await withAdminRole(admin.adminId, admin.aal, async (tx) => {
-    const res = await tx.query<LegalDocumentRecord>(
-      `insert into legal_documents (slug, version, title, body_md, effective_at, summary_of_changes)
-       values ($1, $2, $3, $4, $5::timestamptz, $6)
-       returning id, slug, version, title, body_md, effective_at::text, summary_of_changes, created_at::text`,
-      [v.slug, v.version, v.title, v.body_md, v.effective_at, v.summary_of_changes ?? null]
-    );
-    return res.rows[0]!;
+    try {
+      const res = await tx.query<LegalDocumentRecord>(
+        `insert into legal_documents (slug, version, title, body_md, effective_at, summary_of_changes)
+         values ($1, $2, $3, $4, $5::timestamptz, $6)
+         returning id, slug, version, title, body_md, effective_at::text, summary_of_changes, created_at::text`,
+        [v.slug, v.version, v.title, v.body_md, v.effective_at, v.summary_of_changes ?? null]
+      );
+      return res.rows[0]!;
+    } catch (err) {
+      rethrowKnownPgError(err, {
+        uniqueConflict: "A legal document with this slug and version already exists.",
+      });
+    }
   });
 
   invalidateCache("legal");
@@ -182,6 +189,7 @@ export async function publishAdminLegalDocument(
     revalidatePath(`/${saved.slug}`);
     revalidatePath("/book");
     revalidatePath("/contact");
+    revalidatePath("/sitemap.xml");
   } catch {
     // ignore outside request lifecycle
   }

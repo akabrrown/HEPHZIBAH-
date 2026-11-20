@@ -8,7 +8,7 @@ import { buildWhatsAppUrl } from "@/lib/dates";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
 import { getPublicPolicyVersions } from "@/modules/content-legal/service";
 
-export const revalidate = 300;
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -34,9 +34,6 @@ export default async function ContactPage() {
           ghostTitle="CONTACT"
           description={`Reach our studio desk for urgent dates within ${settings.min_lead_days} days or written briefs. WhatsApp is fastest for short-notice events.`}
         />
-        <h2 className="mt-4 font-display text-xl font-bold text-[var(--white)]">
-          Reach our studio desk
-        </h2>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-12">
@@ -59,18 +56,24 @@ export default async function ContactPage() {
             </ButtonLink>
           </div>
 
-          <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-6 space-y-4 text-sm hm-card-interactive">
+          <div className="border border-[var(--hairline)] bg-[var(--ink-2)] p-6 space-y-2 text-sm hm-card-interactive">
             {settings.phone_e164 && (
               <div className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
-                <a href={`tel:${settings.phone_e164}`} className="hover:text-[var(--cyan)]">
+                <Phone className="h-4 w-4 text-[var(--cyan)] shrink-0" aria-hidden="true" />
+                <a
+                  href={`tel:${settings.phone_e164}`}
+                  className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                >
                   {settings.phone_e164}
                 </a>
               </div>
             )}
             <div className="flex items-center gap-3">
-              <Mail className="h-4 w-4 text-[var(--cyan)]" aria-hidden="true" />
-              <a href={`mailto:${settings.contact_email}`} className="hover:text-[var(--cyan)]">
+              <Mail className="h-4 w-4 text-[var(--cyan)] shrink-0" aria-hidden="true" />
+              <a
+                href={`mailto:${settings.contact_email}`}
+                className="inline-flex min-h-[44px] items-center hover:text-[var(--cyan)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+              >
                 {settings.contact_email}
               </a>
             </div>
@@ -92,7 +95,10 @@ export default async function ContactPage() {
         </div>
 
         <div className="lg:col-span-7">
-          <ContactEnquiryForm privacyVersion={policyVersions.privacyVersion} />
+          <ContactEnquiryForm
+            privacyVersion={policyVersions.privacyVersion}
+            whatsappE164={settings.whatsapp_e164}
+          />
         </div>
       </div>
     </div>

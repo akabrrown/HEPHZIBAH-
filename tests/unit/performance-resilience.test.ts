@@ -12,9 +12,11 @@ import {
   recordApiRequest,
   recordDbQuery,
   resetTelemetryStore,
+  withApiTelemetry,
 } from "@/lib/telemetry";
 import { getDbConnectionStatus } from "@/lib/db";
 import { NextRequest } from "next/server";
+import { GET as getMetrics } from "@/app/api/admin/metrics/route";
 import { middleware } from "@/middleware";
 
 describe("Performance & Resilience (Deduplication, Rate Limiting, Telemetry, DB Management)", () => {
@@ -197,6 +199,32 @@ describe("Performance & Resilience (Deduplication, Rate Limiting, Telemetry, DB 
       expect(measured.durationMs).toBeGreaterThanOrEqual(0);
       expect(measured.cpuMicroseconds.total).toBeGreaterThanOrEqual(0);
       expect(measured.result).toBeGreaterThan(0);
+    });
+
+    it("attaches Server-Timing header and tracks p95DurationMs via withApiTelemetry", async () => {
+      const response = await withApiTelemetry("GET", "/api/telemetry-probe", async () => {
+        recordDbQuery("select 1", 4.5);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const serverTiming = response.headers.get("Server-Timing") ?? "";
+      expect(serverTiming).toMatch(/app;dur=\d+\.\d+, db;dur=4\.50, cpu;dur=\d+\.\d+/);
+
+      const metrics = getTelemetryMetrics();
+      const probe = metrics.requests.slowestEndpoints.find(
+        (e) => e.route === "GET /api/telemetry-probe"
+      );
+      expect(probe).toBeDefined();
+      expect(probe?.p95DurationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("rejects unauthenticated requests to /api/admin/metrics with 401", async () => {
+      const req = new NextRequest("http://localhost:3000/api/admin/metrics", {
+        headers: { "user-agent": "Mozilla/5.0", "x-forwarded-for": "10.0.0.5" },
+      });
+      const res = await getMetrics(req);
+      expect(res.status).toBe(401);
+      expect(res.headers.get("Server-Timing")).toContain("app;dur=");
     });
   });
 

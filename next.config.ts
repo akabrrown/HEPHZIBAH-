@@ -1,28 +1,49 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === "production";
+const isPreview = process.env.VERCEL_ENV === "preview" || !isProd;
+
+const vercelLiveScript = isPreview ? " https://vercel.live" : "";
+const vercelLiveConnect = isPreview
+  ? " https://vercel.live wss://*.pusher.com https://*.pusher.com https://*.pusherapp.com"
+  : "";
+const vercelLiveFont = isPreview ? " https://assets.vercel.com" : "";
+const vercelLiveImg = isPreview ? " https://vercel.live https://vercel.com" : "";
+const vercelLiveFrame = isPreview ? " https://vercel.live" : "";
+const unsafeEval = isProd ? "" : " 'unsafe-eval'";
+
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
-  "script-src-elem 'self' 'unsafe-inline' https://vercel.live",
-  "style-src 'self' 'unsafe-inline' https://vercel.live",
-  "style-src-elem 'self' 'unsafe-inline' https://vercel.live",
-  "img-src 'self' data: blob: https://res.cloudinary.com https://i.ytimg.com https://i.vimeocdn.com https://vercel.live https://vercel.com",
-  "font-src 'self' data: https://fonts.gstatic.com https://assets.vercel.com",
-  "connect-src 'self' https://api.cloudinary.com https://vercel.live wss://*.pusher.com https://*.pusher.com https://*.pusherapp.com",
-  "frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com https://vercel.live",
-  "frame-ancestors 'none'",
+  `script-src 'self' 'unsafe-inline'${unsafeEval}${vercelLiveScript}`,
+  `script-src-elem 'self' 'unsafe-inline'${vercelLiveScript}`,
+  `style-src 'self' 'unsafe-inline'${vercelLiveScript}`,
+  `style-src-elem 'self' 'unsafe-inline'${vercelLiveScript}`,
+  `img-src 'self' data: blob: https://res.cloudinary.com https://i.ytimg.com https://i.vimeocdn.com${vercelLiveImg}`,
+  `font-src 'self' data: https://fonts.gstatic.com${vercelLiveFont}`,
+  `connect-src 'self' https://api.cloudinary.com${vercelLiveConnect}`,
+  `frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com${vercelLiveFrame}`,
+  "frame-ancestors 'self'",
+  "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+  ...(isProd ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  compress: true,
   poweredByHeader: false,
   serverExternalPackages: ["@electric-sql/pglite"],
   outputFileTracingIncludes: {
     "/**": ["supabase/**/*"],
   },
   images: {
-    unoptimized: true,
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 604800,
+    remotePatterns: [
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "https", hostname: "i.ytimg.com" },
+      { protocol: "https", hostname: "i.vimeocdn.com" },
+    ],
   },
   async headers() {
     return [
@@ -35,7 +56,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: "X-Frame-Options",
-            value: "DENY",
+            value: "SAMEORIGIN",
           },
           {
             key: "X-Content-Type-Options",

@@ -1,7 +1,7 @@
 import Link from "next/link";
+import { resolveAdminPageSession } from "@/components/admin/page-guard";
 import { RetryOutboxButton } from "@/components/admin/retry-outbox-button";
 import { ShotCaption } from "@/components/ui/viewfinder";
-import { requireAdmin } from "@/lib/auth";
 import { formatAccraDateTime, formatDisplayDate, formatRelativeAgeHours } from "@/lib/dates";
 import { formatGhsFromMinor } from "@/lib/money";
 import { getAdminDashboardSummary } from "@/modules/admin/service";
@@ -9,7 +9,7 @@ import { getAdminDashboardSummary } from "@/modules/admin/service";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const admin = await requireAdmin();
+  const admin = (await resolveAdminPageSession())!;
   const data = await getAdminDashboardSummary(admin);
   const canBookings = admin.scopes.includes("bookings");
 
@@ -189,7 +189,9 @@ export default async function AdminDashboardPage() {
                         </p>
                       </div>
                       <span className="font-mono-meta text-xs text-[var(--grey)]">
-                        {formatAccraDateTime(w.starts_at)}
+                        {w.starts_at
+                          ? formatAccraDateTime(w.starts_at)
+                          : formatDisplayDate(w.event_date ?? w.deadline)}
                       </span>
                     </Link>
                   </li>
