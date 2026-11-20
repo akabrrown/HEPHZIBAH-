@@ -19,6 +19,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/bookings", label: "Bookings", scope: "bookings" },
   { href: "/admin/calendar", label: "Calendar", scope: "bookings" },
   { href: "/admin/portfolio", label: "Portfolio", scope: "content" },
+  { href: "/admin/hero-slides", label: "Hero Slides", scope: "content" },
   { href: "/admin/content", label: "Content", scope: "content" },
   { href: "/admin/enquiries", label: "Enquiries", scope: "bookings" },
   { href: "/admin/settings", label: "Settings", scope: "settings" },

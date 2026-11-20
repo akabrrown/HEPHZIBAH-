@@ -201,6 +201,8 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
     `);
     const hardeningSql = readSqlFile("supabase/migrations/0004_hardening_and_admin_auth.sql");
     await pg.exec(hardeningSql);
+    const heroSlidesSql = readSqlFile("supabase/migrations/0005_hero_slides.sql");
+    await pg.exec(heroSlidesSql);
     await seedDefaultAdmins(pg);
     return;
   }
@@ -221,6 +223,10 @@ export async function initializePostgresInstance(pg: PGlite): Promise<void> {
     "supabase/migrations/0004_hardening_and_admin_auth.sql"
   );
   await pg.exec(hardeningSql);
+  const heroSlidesSql = readSqlFile(
+    "supabase/migrations/0005_hero_slides.sql"
+  );
+  await pg.exec(heroSlidesSql);
 
   const seedSql = readSqlFile("supabase/seed.sql");
   await pg.exec(seedSql);

@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { ArrowRight, Camera, Film, Layers } from "lucide-react";
 import Link from "next/link";
+import { HeroSlideshow } from "@/components/home/hero-slideshow";
 import { ButtonLink } from "@/components/ui/button";
 import { PortfolioTile } from "@/components/ui/portfolio-tile";
 import { FramingCorners, ShotCaption } from "@/components/ui/viewfinder";
 import { getPublicSiteSettings } from "@/modules/catalog/service";
+import { getPublicHeroSlides } from "@/modules/hero-slides/service";
 import { getPublicPortfolioList, getPublicTestimonials } from "@/modules/portfolio/service";
 
 export const revalidate = 300;
@@ -72,74 +74,18 @@ const HOW_IT_WORKS = [
 ];
 
 export default async function HomePage() {
-  const [settings, portfolio, testimonials] = await Promise.all([
+  const [settings, portfolio, testimonials, heroSlides] = await Promise.all([
     getPublicSiteSettings(),
     getPublicPortfolioList({ featuredOnly: true }),
     getPublicTestimonials(),
+    getPublicHeroSlides(),
   ]);
 
   const featured = portfolio.slice(0, 4);
 
   return (
     <div>
-      {/* Hero section: Compact full-bleed landscape background with studio team */}
-      <section className="relative w-full min-h-[420px] sm:min-h-[460px] lg:min-h-[500px] flex items-center overflow-hidden border-b border-[var(--hairline)] bg-[#0A0A0B] text-white">
-        <div className="absolute inset-0 z-0 overflow-hidden">
-          <picture>
-            <source srcSet="/media/hephzibah-hero-bg.webp" type="image/webp" />
-            <img
-              src="/media/hephzibah-hero-bg.jpg"
-              alt="Hephzibah Media production team holding camera and flash equipment in Accra, Ghana"
-              className="h-full w-full object-cover object-[76%_22%] sm:object-[78%_22%] lg:object-[82%_20%]"
-              loading="eager"
-              fetchPriority="high"
-            />
-          </picture>
-
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0B]/95 via-[#0A0A0B]/70 to-[#0A0A0B]/30 md:bg-gradient-to-r md:from-[#0A0A0B]/95 md:via-[#0A0A0B]/70 md:via-48% md:to-transparent" />
-        </div>
-
-        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
-          <div className="max-w-lg lg:max-w-xl space-y-4">
-            <p className="font-mono text-xs uppercase tracking-widest text-[#00E5FF] font-semibold">
-              {settings.business_name} &middot; Accra, Ghana
-            </p>
-
-            <h1 className="font-display text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl leading-[1.08]">
-              Photography, film and design for the moments that matter.
-            </h1>
-
-            <p className="max-w-md text-sm sm:text-base leading-relaxed text-[#D2D6DC]">
-              Weddings, corporate summits, portraits, and brand identity work produced by our Accra team. Itemised Ghana Cedi quotes, firm date locks, and reliable delivery.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <ButtonLink
-                href="/book"
-                variant="primary"
-                className="px-6 py-3 text-sm font-bold focus-visible:ring-offset-[#0A0A0B]"
-              >
-                Request a booking
-              </ButtonLink>
-              <ButtonLink
-                href="/portfolio"
-                variant="secondaryLight"
-                className="px-6 py-3 text-sm"
-              >
-                See client work
-              </ButtonLink>
-            </div>
-
-            <div className="pt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[#C5CAD1]">
-              <span>Two-camera lead crew</span>
-              <span aria-hidden="true">&middot;</span>
-              <span>Fixed GHS quotes</span>
-              <span aria-hidden="true">&middot;</span>
-              <span>Direct online gallery delivery</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <HeroSlideshow slides={heroSlides} />
 
       {/* Three services as large editorial panels */}
       <section className="border-t border-[var(--hairline)] bg-[var(--black)] py-14 sm:py-18">
