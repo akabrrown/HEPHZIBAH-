@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Camera, Film, Layers } from "lucide-react";
@@ -157,6 +158,25 @@ export default async function ServiceDetailPage({
                   ACCRA DESK
                 </span>
               </div>
+              {(kind === "photography" || kind === "videography") && (
+                <div className="relative mb-5 aspect-[16/9] w-full overflow-hidden rounded-[2px] border border-[var(--hairline)] bg-black">
+                  <Image
+                    src={
+                      kind === "photography"
+                        ? "/media/logo-hephzibah-photography.jpg"
+                        : "/media/logo-hephzibah-videography.jpg"
+                    }
+                    alt={
+                      kind === "photography"
+                        ? "Hephzibah Photography official brand logo"
+                        : "Hephzibah Videography official brand logo"
+                    }
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 40vw"
+                    className="object-contain p-4"
+                  />
+                </div>
+              )}
               <p className="text-xs leading-relaxed text-[var(--grey)] font-mono-meta">
                 {kind === "photography"
                   ? "Dual-card mirrorless bodies, prime focal lengths (24mm, 35mm, 50mm, 85mm), calibrated on-location flash units, and multi-redundant NVMe storage."

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { ArrowRight, Camera, Film, Layers } from "lucide-react";
+import { ArrowRight, Layers } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { HeroSlideshow } from "@/components/home/hero-slideshow";
 import { ButtonLink } from "@/components/ui/button";
@@ -22,6 +23,8 @@ const SERVICE_PANELS = [
     kind: "photography" as const,
     index: "01",
     title: "Photography",
+    logoSrc: "/media/logo-hephzibah-photography.jpg",
+    logoAlt: "Hephzibah Photography official brand logo",
     tagline: "Weddings, traditional ceremonies, funerals, corporate gatherings, and portraits.",
     deliverables: ["Colour-graded digital gallery", "Mixed venue lighting mastery", "Private client consent policy"],
     caption: "EVENT & PORTRAIT · ACCRA",
@@ -30,6 +33,8 @@ const SERVICE_PANELS = [
     kind: "videography" as const,
     index: "02",
     title: "Videography",
+    logoSrc: "/media/logo-hephzibah-videography.jpg",
+    logoAlt: "Hephzibah Videography official brand logo",
     tagline: "Multi-camera ceremony films, music videos, and founder documentaries with clean audio.",
     deliverables: ["Dual-system lapel & ambient audio", "Graded highlight & full film cuts", "4K & social-ready exports"],
     caption: "CINEMA & AUDIO · 4K 24FPS",
@@ -38,17 +43,13 @@ const SERVICE_PANELS = [
     kind: "design" as const,
     index: "03",
     title: "Graphic Design",
+    logoSrc: null,
+    logoAlt: "Hephzibah Graphic Design studio emblem",
     tagline: "Brand marks, event programmes, flyers, and social campaign sets built to deadline.",
     deliverables: ["CMYK print-ready PDFs with bleed", "Campaign kits for web & WhatsApp", "Vector identity master files"],
     caption: "IDENTITY & PRINT · OSU",
   },
 ];
-
-const DISCIPLINE_ICONS = {
-  photography: Camera,
-  videography: Film,
-  design: Layers,
-} as const;
 
 const HOW_IT_WORKS = [
   {
@@ -106,27 +107,49 @@ export default async function HomePage() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-3">
-            {SERVICE_PANELS.map((panel) => {
-              const Icon = DISCIPLINE_ICONS[panel.kind];
-              return (
-                <FramingCorners
-                  key={panel.kind}
-                  className="group border border-[var(--hairline)] bg-[var(--ink-2)] hm-card-interactive"
+            {SERVICE_PANELS.map((panel) => (
+              <FramingCorners
+                key={panel.kind}
+                className="group overflow-hidden border border-[var(--hairline)] bg-[var(--ink-2)] hm-card-interactive"
+              >
+                <Link
+                  href={`/services/${panel.kind}`}
+                  className="flex h-full flex-col focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
                 >
-                  <Link
-                    href={`/services/${panel.kind}`}
-                    className="flex h-full flex-col justify-between p-6 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-[2px] border border-[var(--hairline)] bg-[var(--black)] text-[var(--cyan)]">
-                          <Icon className="h-5 w-5" aria-hidden="true" />
+                  <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-[var(--hairline)] bg-black">
+                    <span className="absolute right-3 top-3 z-10 font-mono-meta text-[11px] font-bold tracking-widest text-white/75">
+                      {panel.index}
+                    </span>
+                    {panel.logoSrc ? (
+                      <Image
+                        src={panel.logoSrc}
+                        alt={panel.logoAlt}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 33vw"
+                        className="object-contain p-4 sm:p-6 transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center text-white select-none transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+                        <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-white/5 text-white">
+                          <Layers className="h-5 w-5" aria-hidden="true" />
                         </div>
-                        <span className="font-mono-meta text-xs font-bold tracking-widest text-[var(--grey)]">
-                          {panel.index}
-                        </span>
+                        <p className="font-serif text-3xl leading-none tracking-tight text-white">
+                          Hephzibah
+                        </p>
+                        <div className="mt-2 flex items-center gap-2.5">
+                          <span className="h-[2px] w-7 bg-[#E0101F]" aria-hidden="true" />
+                          <span className="font-serif italic text-base tracking-wide text-white/95">
+                            Graphic Design
+                          </span>
+                          <span className="h-[2px] w-7 bg-[#E0101F]" aria-hidden="true" />
+                        </div>
                       </div>
-                      <ShotCaption parts={[panel.caption]} className="mt-4" />
+                    )}
+                  </div>
+
+                  <div className="flex flex-1 flex-col justify-between p-6">
+                    <div>
+                      <ShotCaption parts={[panel.caption]} />
                       <h3 className="mt-2 font-display text-2xl font-bold text-[var(--white)] group-hover:text-[var(--cyan)] transition-colors">
                         {panel.title}
                       </h3>
@@ -147,10 +170,10 @@ export default async function HomePage() {
                       Explore {panel.title.toLowerCase()}
                       <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" aria-hidden="true" />
                     </span>
-                  </Link>
-                </FramingCorners>
-              );
-            })}
+                  </div>
+                </Link>
+              </FramingCorners>
+            ))}
           </div>
         </div>
       </section>

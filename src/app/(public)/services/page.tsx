@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Camera, Film, Layers } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
@@ -33,6 +34,17 @@ const DISCIPLINE_SPECS = {
   design: "Visual Identity · Print & Digital Assets",
 } as const;
 
+const DISCIPLINE_LOGOS = {
+  photography: {
+    src: "/media/logo-hephzibah-photography.jpg",
+    alt: "Hephzibah Photography official brand logo",
+  },
+  videography: {
+    src: "/media/logo-hephzibah-videography.jpg",
+    alt: "Hephzibah Videography official brand logo",
+  },
+} as const;
+
 export default async function ServicesHubPage() {
   const { occasions, services } = await getPublicCatalogue();
 
@@ -54,57 +66,88 @@ export default async function ServicesHubPage() {
         {(["photography", "videography", "design"] as const).map((kind) => {
           const kindServices = services.filter((s) => s.kind === kind);
           const Icon = DISCIPLINE_ICONS[kind];
+          const logo = kind === "design" ? null : DISCIPLINE_LOGOS[kind];
           return (
             <FramingCorners
               key={kind}
-              className="flex flex-col border border-[var(--hairline)] bg-[var(--ink-2)] p-6 hm-card-interactive"
+              className="group flex flex-col overflow-hidden border border-[var(--hairline)] bg-[var(--ink-2)] hm-card-interactive"
             >
-              <div className="mb-5 border-b border-[var(--hairline)] pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-[2px] border border-[var(--hairline)] bg-[var(--black)] text-[var(--cyan)]">
-                    <Icon className="h-5 w-5" />
+              <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-[var(--hairline)] bg-black">
+                {logo ? (
+                  <Image
+                    src={logo.src}
+                    alt={logo.alt}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center p-5 text-center text-white select-none transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+                    <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/5 text-white">
+                      <Layers className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <p className="font-serif text-2xl leading-none tracking-tight text-white">
+                      Hephzibah
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="h-[2px] w-6 bg-[#E0101F]" aria-hidden="true" />
+                      <span className="font-serif italic text-sm tracking-wide text-white/95">
+                        Graphic Design
+                      </span>
+                      <span className="h-[2px] w-6 bg-[#E0101F]" aria-hidden="true" />
+                    </div>
                   </div>
-                  <div>
-                    <span className="block font-mono-meta text-[10px] uppercase tracking-wider text-[var(--grey)]">
-                      {DISCIPLINE_SPECS[kind]}
-                    </span>
-                    <span className="block font-mono-meta text-xs font-semibold text-[var(--white)]">
-                      {kindServices.length} STUDIO OFFERINGS
-                    </span>
+                )}
+              </div>
+
+              <div className="flex flex-1 flex-col p-6">
+                <div className="mb-5 border-b border-[var(--hairline)] pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-[2px] border border-[var(--hairline)] bg-[var(--black)] text-[var(--cyan)]">
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <span className="block font-mono-meta text-[10px] uppercase tracking-wider text-[var(--grey)]">
+                        {DISCIPLINE_SPECS[kind]}
+                      </span>
+                      <span className="block font-mono-meta text-xs font-semibold text-[var(--white)]">
+                        {kindServices.length} STUDIO OFFERINGS
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <ShotCaption parts={[kind, `${kindServices.length} SUB-SERVICES`]} />
-              <h2 className="mt-2 font-display text-2xl font-bold text-[var(--white)]">
-                {KIND_LABELS[kind]}
-              </h2>
-              <ul className="mt-4 space-y-1.5 border-t border-[var(--hairline)] pt-4 flex-1">
-                {kindServices.length === 0 ? (
-                  <li className="py-2 text-sm text-[var(--grey)]">
-                    Packages for this discipline are tailored on request.
-                  </li>
-                ) : (
-                  kindServices.map((svc) => (
-                    <li key={svc.id} className="flex items-baseline justify-between gap-3 text-sm">
-                      <Link
-                        href={`/book?kind=${kind}&service=${svc.id}`}
-                        className="inline-flex min-h-[44px] items-center text-[var(--white)] hover:text-[var(--cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
-                      >
-                        {svc.name}
-                      </Link>
-                      {svc.starting_price_minor !== null && (
-                        <span className="font-mono-meta text-xs font-bold text-[var(--cyan)] shrink-0">
-                          From {formatGhsFromMinor(svc.starting_price_minor)}
-                        </span>
-                      )}
+                <ShotCaption parts={[kind, `${kindServices.length} SUB-SERVICES`]} />
+                <h2 className="mt-2 font-display text-2xl font-bold text-[var(--white)]">
+                  {KIND_LABELS[kind]}
+                </h2>
+                <ul className="mt-4 space-y-1.5 border-t border-[var(--hairline)] pt-4 flex-1">
+                  {kindServices.length === 0 ? (
+                    <li className="py-2 text-sm text-[var(--grey)]">
+                      Packages for this discipline are listed in your quote after inquiry.
                     </li>
-                  ))
-                )}
-              </ul>
-              <div className="mt-6">
-                <ButtonLink href={`/services/${kind}`} variant="secondary" className="w-full">
-                  Explore {KIND_LABELS[kind].toLowerCase()}
-                </ButtonLink>
+                  ) : (
+                    kindServices.map((svc) => (
+                      <li key={svc.id} className="flex items-baseline justify-between gap-3 text-sm">
+                        <Link
+                          href={`/book?kind=${kind}&service=${svc.id}`}
+                          className="inline-flex min-h-[44px] items-center text-[var(--white)] hover:text-[var(--cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--cyan)]"
+                        >
+                          {svc.name}
+                        </Link>
+                        {svc.starting_price_minor !== null && (
+                          <span className="font-mono-meta text-xs font-bold text-[var(--cyan)] shrink-0">
+                            From {formatGhsFromMinor(svc.starting_price_minor)}
+                          </span>
+                        )}
+                      </li>
+                    ))
+                  )}
+                </ul>
+                <div className="mt-6">
+                  <ButtonLink href={`/services/${kind}`} variant="secondary" className="w-full">
+                    Explore {KIND_LABELS[kind].toLowerCase()}
+                  </ButtonLink>
+                </div>
               </div>
             </FramingCorners>
           );
